@@ -33,6 +33,19 @@ function labelForCheckbox(checkbox: HTMLInputElement): string {
   return checkbox.getAttribute("aria-label")?.trim() ?? "";
 }
 
+function matchingCards(root: ParentNode, title: string): HTMLElement[] {
+  return listFilterCards(root).filter((card) => titleFor(card) === title);
+}
+
+function setCheckbox(checkbox: HTMLInputElement, checked: boolean): void {
+  if (checkbox.checked !== checked) {
+    checkbox.click();
+  }
+
+  checkbox.checked = checked;
+  checkbox.setAttribute("aria-checked", checked ? "true" : "false");
+}
+
 export function createPowerBiDomAdapter(root: ParentNode = document): PowerBiDomAdapter {
   return {
     readListFilters() {
@@ -50,10 +63,40 @@ export function createPowerBiDomAdapter(root: ParentNode = document): PowerBiDom
     },
 
     async applyListFilterSelection(title: string, selectedLabels: string[]) {
+      const cards = matchingCards(root, title);
+
+      if (cards.length === 0) {
+        return { title, status: "missing_filter", message: "Filter was not found." };
+      }
+
+      if (cards.length > 1) {
+        return { title, status: "ambiguous_filter", message: "More than one filter matched this title." };
+      }
+
+      const card = cards[0];
+      const checkboxes = Array.from(card.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'));
+      const byLabel = new Map(checkboxes.map((checkbox) => [labelForCheckbox(checkbox), checkbox]));
+      const missing = selectedLabels.filter((label) => !byLabel.has(label));
+
+      if (missing.length > 0) {
+        return { title, status: "missing_value", message: `Missing values: ${missing.join(", ")}.` };
+      }
+
+      for (const checkbox of checkboxes) {
+        setCheckbox(checkbox, false);
+      }
+
+      for (const label of selectedLabels) {
+        const checkbox = byLabel.get(label);
+        if (checkbox) {
+          setCheckbox(checkbox, true);
+        }
+      }
+
       return {
         title,
-        status: "interaction_failed",
-        message: `Apply behavior is unavailable for ${selectedLabels.length} values in this adapter version.`
+        status: "applied",
+        message: `Applied ${selectedLabels.length} ${selectedLabels.length === 1 ? "value" : "values"}.`
       };
     }
   };
