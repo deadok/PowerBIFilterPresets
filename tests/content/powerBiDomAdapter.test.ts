@@ -84,4 +84,21 @@ describe("createPowerBiDomAdapter", () => {
       message: "More than one filter matched this title."
     });
   });
+
+  it("waits for list filters to appear", async () => {
+    document.body.innerHTML = "<main></main>";
+    const adapter = createPowerBiDomAdapter(document);
+    const waitPromise = adapter.waitForFilterControls({ timeoutMs: 200, intervalMs: 10 });
+
+    document.body.innerHTML = fixture;
+
+    await expect(waitPromise).resolves.toBe(true);
+  });
+
+  it("returns false when filters do not appear before timeout", async () => {
+    document.body.innerHTML = "<main></main>";
+    const adapter = createPowerBiDomAdapter(document);
+
+    await expect(adapter.waitForFilterControls({ timeoutMs: 1, intervalMs: 1 })).resolves.toBe(false);
+  });
 });

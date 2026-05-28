@@ -1,9 +1,14 @@
 import type { FilterOperationResult, FilterPresetItem } from "../shared/types";
 
 type PowerBiDomAdapter = {
+  waitForFilterControls(options?: { timeoutMs?: number; intervalMs?: number }): Promise<boolean>;
   readListFilters(): FilterPresetItem[];
   applyListFilterSelection(title: string, selectedLabels: string[]): Promise<FilterOperationResult>;
 };
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
 
 function textOf(element: Element | null): string {
   return element?.textContent?.trim().replace(/\s+/g, " ") ?? "";
@@ -48,6 +53,21 @@ function setCheckbox(checkbox: HTMLInputElement, checked: boolean): void {
 
 export function createPowerBiDomAdapter(root: ParentNode = document): PowerBiDomAdapter {
   return {
+    async waitForFilterControls(options = {}) {
+      const timeoutMs = options.timeoutMs ?? 8000;
+      const intervalMs = options.intervalMs ?? 250;
+      const deadline = Date.now() + timeoutMs;
+
+      while (Date.now() <= deadline) {
+        if (listFilterCards(root).length > 0) {
+          return true;
+        }
+        await delay(intervalMs);
+      }
+
+      return false;
+    },
+
     readListFilters() {
       return listFilterCards(root)
         .map((card) => {

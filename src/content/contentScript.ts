@@ -4,6 +4,11 @@ import type { ContentRequest, ContentResponse, FilterOperationResult } from "../
 const adapter = createPowerBiDomAdapter(document);
 
 async function handleRequest(request: ContentRequest): Promise<ContentResponse> {
+  const ready = await adapter.waitForFilterControls();
+  if (!ready) {
+    return { ok: false, error: "Power BI list filters did not appear before timeout." };
+  }
+
   if (request.type === "READ_FILTERS") {
     return { ok: true, filters: adapter.readListFilters() };
   }
