@@ -35,3 +35,12 @@ export type FilterOperationResult = {
   status: OperationStatus;
   message: string;
 };
+
+export type ContentRequest =
+  | { type: "READ_FILTERS" }
+  | { type: "APPLY_FILTERS"; filters: FilterPresetItem[] };
+
+export type ContentResponse =
+  | { ok: true; filters: FilterPresetItem[] }
+  | { ok: true; results: FilterOperationResult[] }
+  | { ok: false; error: string };
