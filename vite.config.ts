@@ -1,7 +1,16 @@
+import { copyFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig } from "vite";
 
+const copyManifestPlugin = {
+  name: "copy-extension-manifest",
+  closeBundle() {
+    copyFileSync(resolve(__dirname, "manifest.json"), resolve(__dirname, "dist/manifest.json"));
+  }
+};
+
 export default defineConfig({
+  plugins: [copyManifestPlugin],
   build: {
     outDir: "dist",
     emptyOutDir: true,
