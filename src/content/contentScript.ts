@@ -10,7 +10,7 @@ async function handleRequest(request: ContentRequest): Promise<ContentResponse> 
   }
 
   if (request.type === "READ_FILTERS") {
-    return { ok: true, filters: adapter.readListFilters() };
+    return { ok: true, filters: await adapter.readListFilters() };
   }
 
   if (request.type === "APPLY_FILTERS") {

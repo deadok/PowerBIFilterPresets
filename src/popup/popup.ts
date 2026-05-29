@@ -1,5 +1,6 @@
 import "./popup.css";
 import popupMarkup from "./popup.html?raw";
+import { findBestFrameForFilters } from "./frameTarget";
 import { createPresetStore } from "../shared/presetStore";
 import { summarizeResults } from "../shared/resultSummary";
 import type { ContentRequest, ContentResponse, FilterPresetItem, Preset } from "../shared/types";
@@ -34,8 +35,10 @@ async function getActiveTab(): Promise<ActiveTab> {
 
 async function sendToActiveTab(request: ContentRequest): Promise<ContentResponse> {
   const tab = await getActiveTab();
+  const frameId = await findBestFrameForFilters(tab.id);
+
   return new Promise((resolve, reject) => {
-    chrome.tabs.sendMessage(tab.id, request, (response: ContentResponse | undefined) => {
+    const handleResponse = (response: ContentResponse | undefined): void => {
       const runtimeError = chrome.runtime.lastError;
       if (runtimeError) {
         reject(new Error(runtimeError.message));
@@ -48,7 +51,14 @@ async function sendToActiveTab(request: ContentRequest): Promise<ContentResponse
       }
 
       resolve(response);
-    });
+    };
+
+    if (frameId === undefined) {
+      chrome.tabs.sendMessage(tab.id, request, handleResponse);
+      return;
+    }
+
+    chrome.tabs.sendMessage(tab.id, request, { frameId }, handleResponse);
   });
 }
 

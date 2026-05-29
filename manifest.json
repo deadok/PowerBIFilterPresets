@@ -3,7 +3,7 @@
   "name": "Power BI Filter Presets",
   "version": "0.1.0",
   "description": "Save and restore local presets for embedded Power BI list filters.",
-  "permissions": ["storage", "activeTab"],
+  "permissions": ["storage", "activeTab", "scripting"],
   "action": {
     "default_title": "Power BI Presets",
     "default_popup": "index.html"
