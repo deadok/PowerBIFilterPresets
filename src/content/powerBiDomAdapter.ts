@@ -98,15 +98,27 @@ function slicerOptions(control: SlicerControl): HTMLElement[] {
   return Array.from(control.element.querySelectorAll<HTMLElement>('[role="listbox"] [role="option"]'));
 }
 
-function externalSlicerOptions(root: ParentNode, title: string): HTMLElement[] {
-  const listboxes = Array.from(root.querySelectorAll<HTMLElement>('[role="listbox"]')).filter((listbox) => {
-    const label = listbox.getAttribute("aria-label")?.trim();
-    return label === title && !listbox.closest(".slicer-container");
-  });
+function externalSlicerOptions(roots: ParentNode | ParentNode[], title: string): HTMLElement[] {
+  const options: HTMLElement[] = [];
+  const seen = new Set<HTMLElement>();
 
-  return listboxes.flatMap((listbox) =>
-    Array.from(listbox.querySelectorAll<HTMLElement>('[role="option"]'))
-  );
+  for (const root of Array.isArray(roots) ? roots : [roots]) {
+    const listboxes = Array.from(root.querySelectorAll<HTMLElement>('[role="listbox"]')).filter((listbox) => {
+      const label = listbox.getAttribute("aria-label")?.trim();
+      return label === title && !listbox.closest(".slicer-container");
+    });
+
+    for (const listbox of listboxes) {
+      for (const option of Array.from(listbox.querySelectorAll<HTMLElement>('[role="option"]'))) {
+        if (!seen.has(option)) {
+          seen.add(option);
+          options.push(option);
+        }
+      }
+    }
+  }
+
+  return options;
 }
 
 async function closeDropdownOpenedForRead(combobox: HTMLElement, options: { title?: string } = {}): Promise<void> {
@@ -146,7 +158,8 @@ async function resolveSlicerOptions(
     return [];
   }
 
-  const existingExternalOptions = externalSlicerOptions(root, control.title);
+  const dropdownRoots = [root, combobox.ownerDocument];
+  const existingExternalOptions = externalSlicerOptions(dropdownRoots, control.title);
   if (existingExternalOptions.length > 0) {
     return existingExternalOptions;
   }
@@ -156,12 +169,12 @@ async function resolveSlicerOptions(
   const timeoutMs = options.dropdownOptionsTimeoutMs ?? DROPDOWN_OPTIONS_TIMEOUT_MS;
   const intervalMs = options.dropdownOptionsIntervalMs ?? DROPDOWN_OPTIONS_INTERVAL_MS;
   const deadline = Date.now() + timeoutMs;
-  let externalOptions = externalSlicerOptions(root, control.title);
+  let externalOptions = externalSlicerOptions(dropdownRoots, control.title);
   options.onWaitingForExternalOptions?.(timeoutMs, intervalMs);
 
   while (externalOptions.length === 0 && Date.now() <= deadline) {
     await delay(intervalMs);
-    externalOptions = externalSlicerOptions(root, control.title);
+    externalOptions = externalSlicerOptions(dropdownRoots, control.title);
   }
 
   options.onResolvedExternalOptions?.(externalOptions.length);
@@ -355,16 +368,16 @@ export function createPowerBiDomAdapter(root: ParentNode = document): PowerBiDom
             : (await resolveSlicerOptions(root, control, {
                 onOpened: (combobox) => {
                   openedCombobox = combobox;
-                  console.debug(LOG_PREFIX, "Opened dropdown", {
+                  console.info(LOG_PREFIX, "Opened dropdown", {
                     title,
                     ariaLabel: combobox.getAttribute("aria-label")?.trim() || ""
                   });
                 },
                 onResolvedExternalOptions: (optionCount) => {
-                  console.debug(LOG_PREFIX, "Resolved dropdown options", { title, optionCount });
+                  console.info(LOG_PREFIX, "Resolved dropdown options", { title, optionCount });
                 },
                 onWaitingForExternalOptions: (timeoutMs, intervalMs) => {
-                  console.debug(LOG_PREFIX, "Waiting for dropdown options", { title, timeoutMs, intervalMs });
+                  console.info(LOG_PREFIX, "Waiting for dropdown options", { title, timeoutMs, intervalMs });
                 }
               })).map((option) => [labelForSlicerOption(option), option] as const);
 

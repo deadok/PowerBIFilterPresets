@@ -34,6 +34,7 @@ describe("createPowerBiDomAdapter", () => {
     testAbortController = new AbortController();
     testTimers = [];
     vi.spyOn(console, "debug").mockImplementation(() => undefined);
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     document.body.innerHTML = fixture;
   });
@@ -371,6 +372,78 @@ describe("createPowerBiDomAdapter", () => {
       }
     });
     const adapter = createPowerBiDomAdapter(document);
+
+    await expect(adapter.applyListFilterSelection("Product", ["rating"])).resolves.toEqual({
+      title: "Product",
+      status: "applied",
+      message: "Applied 1 value."
+    });
+
+    await expect(adapter.readListFilters()).resolves.toEqual([
+      { title: "Product", type: "list", selectedLabels: ["rating"] }
+    ]);
+  });
+
+  it("discovers dropdown options appended outside a narrow adapter root on first apply", async () => {
+    document.body.innerHTML = `
+      <main>
+        <div id="narrow-root">
+          <section class="visual customPadding visual-slicer">
+            <div class="slicer-container">
+              <h3 class="slicer-header-text" aria-label="Product" title="Product">Product</h3>
+              <div class="slicer-dropdown-menu" role="combobox" aria-label="Product">
+                <div class="slicer-restatement">All</div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+    `;
+    const selectedTitles = new Set(["ops"]);
+    const renderOption = (title: string) => `
+      <div class="slicerItemContainer" role="option" aria-selected="${selectedTitles.has(title)}" title="${title}">
+        <div class="slicerCheckbox${selectedTitles.has(title) ? " selected" : ""}"></div>
+        <span class="slicerText">${title}</span>
+      </div>`;
+    const closePopup = () => document.querySelector(".slicer-dropdown-popup")?.remove();
+    const combobox = document.querySelector<HTMLElement>('[role="combobox"]');
+    combobox?.addEventListener("click", () => {
+      if (document.querySelector(".slicer-dropdown-popup")) {
+        closePopup();
+        return;
+      }
+
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        `<div class="slicer-dropdown-popup visual themeableElement focused">
+          <div class="slicerBody" role="listbox" aria-label="Product">
+            ${renderOption("ops")}
+            ${renderOption("rating")}
+          </div>
+        </div>`
+      );
+    });
+    addDocumentListener("click", (event) => {
+      const option = (event.target as Element).closest<HTMLElement>('[role="option"]');
+      const title = option?.getAttribute("title");
+      if (!title) {
+        return;
+      }
+
+      if (selectedTitles.has(title)) {
+        selectedTitles.delete(title);
+      } else {
+        selectedTitles.add(title);
+      }
+    });
+    addDocumentListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closePopup();
+      }
+    });
+    const narrowRoot = document.querySelector<HTMLElement>("#narrow-root");
+    expect(narrowRoot).not.toBeNull();
+    const adapter = createPowerBiDomAdapter(narrowRoot!);
 
     await expect(adapter.applyListFilterSelection("Product", ["rating"])).resolves.toEqual({
       title: "Product",
