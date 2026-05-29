@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPowerBiDomAdapter } from "../../src/content/powerBiDomAdapter";
 
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -33,10 +33,13 @@ describe("createPowerBiDomAdapter", () => {
   beforeEach(() => {
     testAbortController = new AbortController();
     testTimers = [];
+    vi.spyOn(console, "debug").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
     document.body.innerHTML = fixture;
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     testAbortController.abort();
     for (const timer of testTimers) {
       window.clearTimeout(timer);
@@ -250,6 +253,34 @@ describe("createPowerBiDomAdapter", () => {
       { title: "Region", type: "list", selectedLabels: ["APAC"] },
       { title: "Product", type: "list", selectedLabels: ["Data Platform"] }
     ]);
+  });
+
+  it("logs clear and select transitions while applying saved labels", async () => {
+    const debugSpy = vi.mocked(console.debug);
+    const adapter = createPowerBiDomAdapter(document);
+
+    await adapter.applyListFilterSelection("Region", ["APAC"]);
+
+    expect(debugSpy).toHaveBeenCalledWith(
+      "[Power BI Presets]",
+      "Clearing filter value",
+      expect.objectContaining({
+        title: "Region",
+        label: "EMEA",
+        beforeSelected: true,
+        afterSelected: false
+      })
+    );
+    expect(debugSpy).toHaveBeenCalledWith(
+      "[Power BI Presets]",
+      "Selecting filter value",
+      expect.objectContaining({
+        title: "Region",
+        label: "APAC",
+        beforeSelected: false,
+        afterSelected: true
+      })
+    );
   });
 
   it("clears and applies values in Power BI slicer listboxes", async () => {

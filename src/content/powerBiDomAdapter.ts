@@ -20,8 +20,16 @@ type SlicerControl = {
 
 type ListControl = CheckboxControl | SlicerControl;
 
+type SelectionTransition = {
+  label: string;
+  beforeSelected: boolean;
+  clickAttempted: boolean;
+  afterSelected: boolean;
+};
+
 const DROPDOWN_OPTIONS_TIMEOUT_MS = 500;
 const DROPDOWN_OPTIONS_INTERVAL_MS = 25;
+const LOG_PREFIX = "[Power BI Presets]";
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -101,12 +109,19 @@ function externalSlicerOptions(root: ParentNode, title: string): HTMLElement[] {
   );
 }
 
-async function closeDropdownOpenedForRead(combobox: HTMLElement): Promise<void> {
+async function closeDropdownOpenedForRead(combobox: HTMLElement, options: { title?: string } = {}): Promise<void> {
+  if (options.title) {
+    console.debug(LOG_PREFIX, "Closing dropdown", { title: options.title, key: "Escape" });
+  }
   combobox.click();
   await delay(0);
 
   combobox.ownerDocument.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   await delay(0);
+
+  if (options.title) {
+    console.debug(LOG_PREFIX, "Closed dropdown", { title: options.title, key: "Escape" });
+  }
 }
 
 async function resolveSlicerOptions(
@@ -117,6 +132,8 @@ async function resolveSlicerOptions(
     dropdownOptionsIntervalMs?: number;
     dropdownOptionsTimeoutMs?: number;
     onOpened?: (combobox: HTMLElement) => void;
+    onResolvedExternalOptions?: (optionCount: number) => void;
+    onWaitingForExternalOptions?: (timeoutMs: number, intervalMs: number) => void;
   } = {}
 ): Promise<HTMLElement[]> {
   const inlineOptions = slicerOptions(control);
@@ -140,11 +157,14 @@ async function resolveSlicerOptions(
   const intervalMs = options.dropdownOptionsIntervalMs ?? DROPDOWN_OPTIONS_INTERVAL_MS;
   const deadline = Date.now() + timeoutMs;
   let externalOptions = externalSlicerOptions(root, control.title);
+  options.onWaitingForExternalOptions?.(timeoutMs, intervalMs);
 
   while (externalOptions.length === 0 && Date.now() <= deadline) {
     await delay(intervalMs);
     externalOptions = externalSlicerOptions(root, control.title);
   }
+
+  options.onResolvedExternalOptions?.(externalOptions.length);
 
   if (options.closeAfterRead) {
     await closeDropdownOpenedForRead(combobox);
@@ -174,24 +194,63 @@ function matchingControls(root: ParentNode, title: string): ListControl[] {
   return listFilterControls(root).filter((control) => control.title === title);
 }
 
-function setCheckbox(checkbox: HTMLInputElement, checked: boolean): void {
-  if (checkbox.checked !== checked) {
+function logSelectionTransition(
+  message: string,
+  title: string,
+  controlKind: ListControl["kind"],
+  transition: SelectionTransition,
+  desiredSelected: boolean
+): void {
+  const details = {
+    title,
+    controlKind,
+    label: transition.label,
+    beforeSelected: transition.beforeSelected,
+    clickAttempted: transition.clickAttempted,
+    afterSelected: transition.afterSelected
+  };
+
+  console.debug(LOG_PREFIX, message, details);
+
+  if (transition.afterSelected !== desiredSelected) {
+    console.warn(LOG_PREFIX, "Filter value state did not match requested selection", {
+      ...details,
+      requestedSelected: desiredSelected
+    });
+  }
+}
+
+function setCheckbox(checkbox: HTMLInputElement, checked: boolean): SelectionTransition {
+  const label = labelForCheckbox(checkbox);
+  const beforeSelected = checkbox.checked || checkbox.getAttribute("aria-checked") === "true";
+  const clickAttempted = beforeSelected !== checked;
+
+  if (clickAttempted) {
     checkbox.click();
   }
 
   checkbox.checked = checked;
   checkbox.setAttribute("aria-checked", checked ? "true" : "false");
+
+  return {
+    label,
+    beforeSelected,
+    clickAttempted,
+    afterSelected: checkbox.checked || checkbox.getAttribute("aria-checked") === "true"
+  };
 }
 
-function setSlicerOption(option: HTMLElement, selected: boolean): void {
+function setSlicerOption(option: HTMLElement, selected: boolean): SelectionTransition {
   const label = labelForSlicerOption(option);
   const findMatchingOptions = () =>
     Array.from(option.ownerDocument.querySelectorAll<HTMLElement>('[role="option"]')).filter(
       (currentOption) => currentOption === option || labelForSlicerOption(currentOption) === label
     );
   const liveOption = findMatchingOptions().find((currentOption) => currentOption.isConnected) ?? option;
+  const beforeSelected = isSlicerOptionSelected(liveOption);
+  const clickAttempted = beforeSelected !== selected;
 
-  if (isSlicerOptionSelected(liveOption) !== selected) {
+  if (clickAttempted) {
     liveOption.click();
   }
 
@@ -209,6 +268,15 @@ function setSlicerOption(option: HTMLElement, selected: boolean): void {
       element.classList.toggle("selected", selected);
     });
   }
+
+  const updatedLiveOption = findMatchingOptions().find((currentOption) => currentOption.isConnected) ?? liveOption;
+
+  return {
+    label,
+    beforeSelected,
+    clickAttempted,
+    afterSelected: isSlicerOptionSelected(updatedLiveOption)
+  };
 }
 
 async function selectedLabelsForControl(root: ParentNode, control: ListControl): Promise<string[]> {
@@ -262,10 +330,16 @@ export function createPowerBiDomAdapter(root: ParentNode = document): PowerBiDom
       const controls = matchingControls(root, title);
 
       if (controls.length === 0) {
+        console.warn(LOG_PREFIX, "Filter was not found while applying preset", { title, desiredLabels: selectedLabels });
         return { title, status: "missing_filter", message: "Filter was not found." };
       }
 
       if (controls.length > 1) {
+        console.warn(LOG_PREFIX, "More than one filter matched while applying preset", {
+          title,
+          desiredLabels: selectedLabels,
+          matchCount: controls.length
+        });
         return { title, status: "ambiguous_filter", message: "More than one filter matched this title." };
       }
 
@@ -281,31 +355,69 @@ export function createPowerBiDomAdapter(root: ParentNode = document): PowerBiDom
             : (await resolveSlicerOptions(root, control, {
                 onOpened: (combobox) => {
                   openedCombobox = combobox;
+                  console.debug(LOG_PREFIX, "Opened dropdown", {
+                    title,
+                    ariaLabel: combobox.getAttribute("aria-label")?.trim() || ""
+                  });
+                },
+                onResolvedExternalOptions: (optionCount) => {
+                  console.debug(LOG_PREFIX, "Resolved dropdown options", { title, optionCount });
+                },
+                onWaitingForExternalOptions: (timeoutMs, intervalMs) => {
+                  console.debug(LOG_PREFIX, "Waiting for dropdown options", { title, timeoutMs, intervalMs });
                 }
               })).map((option) => [labelForSlicerOption(option), option] as const);
 
         const byLabel = new Map(entries.filter(([label]) => label.length > 0 && label !== "Select all"));
+        const availableLabels = Array.from(byLabel.keys());
         const missing = selectedLabels.filter((label) => !byLabel.has(label));
 
+        console.debug(LOG_PREFIX, "Applying list filter selection", {
+          title,
+          controlKind: control.kind,
+          desiredLabels: selectedLabels,
+          availableLabels
+        });
+
         if (missing.length > 0) {
+          console.warn(LOG_PREFIX, "Missing filter values while applying preset", {
+            title,
+            desiredLabels: selectedLabels,
+            missingLabels: missing,
+            availableLabels
+          });
           return { title, status: "missing_value", message: `Missing values: ${missing.join(", ")}.` };
         }
 
-        for (const element of byLabel.values()) {
+        for (const [label, element] of byLabel) {
+          let transition: SelectionTransition;
           if (control.kind === "checkbox") {
-            setCheckbox(element as HTMLInputElement, false);
+            transition = setCheckbox(element as HTMLInputElement, false);
           } else {
-            setSlicerOption(element as HTMLElement, false);
+            transition = setSlicerOption(element as HTMLElement, false);
           }
+          logSelectionTransition("Clearing filter value", title, control.kind, { ...transition, label }, false);
         }
 
         for (const label of selectedLabels) {
           const element = byLabel.get(label);
           if (element && control.kind === "checkbox") {
-            setCheckbox(element as HTMLInputElement, true);
+            logSelectionTransition(
+              "Selecting filter value",
+              title,
+              control.kind,
+              { ...setCheckbox(element as HTMLInputElement, true), label },
+              true
+            );
           }
           if (element && control.kind === "slicer") {
-            setSlicerOption(element as HTMLElement, true);
+            logSelectionTransition(
+              "Selecting filter value",
+              title,
+              control.kind,
+              { ...setSlicerOption(element as HTMLElement, true), label },
+              true
+            );
           }
         }
 
@@ -316,7 +428,7 @@ export function createPowerBiDomAdapter(root: ParentNode = document): PowerBiDom
         };
       } finally {
         if (openedCombobox) {
-          await closeDropdownOpenedForRead(openedCombobox);
+          await closeDropdownOpenedForRead(openedCombobox, { title });
         }
       }
     }
