@@ -71,7 +71,8 @@ function slicerControls(root: ParentNode): SlicerControl[] {
     .filter(
       (container) =>
         container.querySelector('[role="listbox"] [role="option"]') !== null ||
-        container.querySelector('[role="combobox"]') !== null
+        container.querySelector('[role="combobox"]') !== null ||
+        container.querySelector('input[type="search"], [role="searchbox"]') !== null
     )
     .map((element) => ({ kind: "slicer" as const, element, title: titleForSlicer(element) }))
     .filter((control) => control.title.length > 0);
@@ -181,15 +182,16 @@ async function resolveSlicerOptions(
     return inlineOptions;
   }
 
-  const combobox = control.element.querySelector<HTMLElement>('[role="combobox"]');
-  if (!combobox) {
-    return [];
-  }
-
-  const dropdownRoots = [root, combobox.ownerDocument];
+  const dropdownDocument = control.element.ownerDocument;
+  const dropdownRoots = [root, dropdownDocument];
   const existingExternalOptions = externalSlicerOptions(dropdownRoots, control.title);
   if (existingExternalOptions.length > 0) {
     return existingExternalOptions;
+  }
+
+  const combobox = control.element.querySelector<HTMLElement>('[role="combobox"]');
+  if (!combobox) {
+    return [];
   }
 
   combobox.click();

@@ -1227,6 +1227,50 @@ describe("createPowerBiDomAdapter", () => {
     expect(selectedTitles).toEqual(new Set(["ops"]));
   });
 
+  it("applies saved labels when a dropdown popup is already open and the combobox is replaced by search UI", async () => {
+    document.body.innerHTML = `
+      <main>
+        <section class="visual customPadding visual-slicer">
+          <div class="slicer-container">
+            <h3 class="slicer-header-text" aria-label="Продукт" title="Продукт">Продукт</h3>
+            <div class="slicer-content-wrapper">
+              <input type="search" placeholder="Search" aria-label="Search" />
+            </div>
+          </div>
+        </section>
+        <div class="slicer-dropdown-popup visual themeableElement focused">
+          <div class="slicerBody" role="listbox" aria-label="Продукт">
+            <div class="slicerItemContainer" role="option" aria-selected="false" title="Select all">
+              <div class="slicerCheckbox"></div>
+              <span class="slicerText">Select all</span>
+            </div>
+            <div class="slicerItemContainer" role="option" aria-selected="false" title="коммуникации">
+              <div class="slicerCheckbox"></div>
+              <span class="slicerText">коммуникации</span>
+            </div>
+            <div class="slicerItemContainer" role="option" aria-selected="false" title="обучение">
+              <div class="slicerCheckbox"></div>
+              <span class="slicerText">обучение</span>
+            </div>
+          </div>
+        </div>
+      </main>
+    `;
+    addSlicerOptionClickHandler();
+    const adapter = createPowerBiDomAdapter(document);
+
+    await expect(adapter.applyListFilterSelection("Продукт", ["коммуникации", "обучение"])).resolves.toEqual({
+      title: "Продукт",
+      status: "applied",
+      message: "Applied 2 values."
+    });
+
+    const selectedOptions = Array.from(document.querySelectorAll<HTMLElement>('[role="option"][aria-selected="true"]')).map(
+      (option) => option.getAttribute("title")
+    );
+    expect(selectedOptions).toEqual(["коммуникации", "обучение"]);
+  });
+
   it("reports missing filters", async () => {
     const adapter = createPowerBiDomAdapter(document);
 

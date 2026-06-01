@@ -1,5 +1,5 @@
 import { createPowerBiDomAdapter } from "./powerBiDomAdapter";
-import { parsePresetExport } from "../shared/presetExport";
+import { parsePresetExport } from "./presetExportParse";
 import type { ContentRequest, ContentResponse, FilterOperationResult } from "../shared/types";
 
 const LOG_PREFIX = "[Power BI Presets]";

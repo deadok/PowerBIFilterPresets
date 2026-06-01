@@ -1,19 +1,14 @@
 import "./popup.css";
 import popupMarkup from "./popup.html?raw";
-import { findBestFrameForFilters } from "./frameTarget";
+import { getActiveTab, sendContentRequestToActiveTab } from "./contentMessaging";
 import { serializePresetExport } from "../shared/presetExport";
 import { createPresetStore } from "../shared/presetStore";
 import { summarizeResults } from "../shared/resultSummary";
-import type { ContentRequest, ContentResponse, FilterPresetItem, Preset } from "../shared/types";
+import type { FilterPresetItem, Preset } from "../shared/types";
 import { normalizePageUrl } from "../shared/url";
 
 const app = document.querySelector<HTMLDivElement>("#app");
 const store = createPresetStore();
-
-type ActiveTab = chrome.tabs.Tab & {
-  id: number;
-  url: string;
-};
 
 function createPreset(filters: FilterPresetItem[], name: string): Preset {
   const now = new Date().toISOString();
@@ -24,43 +19,6 @@ function createPreset(filters: FilterPresetItem[], name: string): Preset {
     updatedAt: now,
     filters
   };
-}
-
-async function getActiveTab(): Promise<ActiveTab> {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id || !tab.url) {
-    throw new Error("Active tab is not available.");
-  }
-  return tab as ActiveTab;
-}
-
-async function sendToActiveTab(request: ContentRequest): Promise<ContentResponse> {
-  const tab = await getActiveTab();
-  const frameId = await findBestFrameForFilters(tab.id);
-
-  return new Promise((resolve, reject) => {
-    const handleResponse = (response: ContentResponse | undefined): void => {
-      const runtimeError = chrome.runtime.lastError;
-      if (runtimeError) {
-        reject(new Error(runtimeError.message));
-        return;
-      }
-
-      if (!response) {
-        reject(new Error("No response from content script."));
-        return;
-      }
-
-      resolve(response);
-    };
-
-    if (frameId === undefined) {
-      chrome.tabs.sendMessage(tab.id, request, handleResponse);
-      return;
-    }
-
-    chrome.tabs.sendMessage(tab.id, request, { frameId }, handleResponse);
-  });
 }
 
 function renderResult(element: HTMLOutputElement, text: string): void {
@@ -134,7 +92,7 @@ async function mount(): Promise<void> {
   saveButton.addEventListener("click", () => {
     runPopupAction(result, async () => {
       renderResult(result, "Reading filters...");
-      const response = await sendToActiveTab({ type: "READ_FILTERS" });
+      const response = await sendContentRequestToActiveTab({ type: "READ_FILTERS" });
 
       if (!response.ok || !("filters" in response)) {
         renderResult(result, response.ok ? "No filters returned." : response.error);
@@ -165,7 +123,7 @@ async function mount(): Promise<void> {
       }
 
       renderResult(result, "Applying preset...");
-      const response = await sendToActiveTab({ type: "APPLY_FILTERS", filters: preset.filters });
+      const response = await sendContentRequestToActiveTab({ type: "APPLY_FILTERS", filters: preset.filters });
 
       if (!response.ok || !("results" in response)) {
         renderResult(result, response.ok ? "No results returned." : response.error);

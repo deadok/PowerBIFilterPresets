@@ -12,7 +12,9 @@ export function probeFrameForSupportedFilters(): FrameProbePayload {
     '[data-powerbi-filter="list"] input[type="checkbox"]',
     '.filter-card input[type="checkbox"]',
     '.slicer-container [role="listbox"] [role="option"]',
-    '.slicer-container [role="combobox"]'
+    '.slicer-container [role="combobox"]',
+    '.slicer-container input[type="search"]',
+    '.slicer-container [role="searchbox"]'
   ].join(",");
 
   return {
