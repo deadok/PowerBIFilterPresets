@@ -1,6 +1,7 @@
 import "./popup.css";
 import popupMarkup from "./popup.html?raw";
 import { findBestFrameForFilters } from "./frameTarget";
+import { serializePresetExport } from "../shared/presetExport";
 import { createPresetStore } from "../shared/presetStore";
 import { summarizeResults } from "../shared/resultSummary";
 import type { ContentRequest, ContentResponse, FilterPresetItem, Preset } from "../shared/types";
@@ -83,18 +84,29 @@ async function mount(): Promise<void> {
   const pageStatus = app.querySelector<HTMLParagraphElement>("#page-status");
   const saveButton = app.querySelector<HTMLButtonElement>("#save-current");
   const applyButton = app.querySelector<HTMLButtonElement>("#apply-preset");
+  const exportButton = app.querySelector<HTMLButtonElement>("#export-preset");
   const renameButton = app.querySelector<HTMLButtonElement>("#rename-preset");
   const deleteButton = app.querySelector<HTMLButtonElement>("#delete-preset");
   const presetSelect = app.querySelector<HTMLSelectElement>("#preset-select");
   const result = app.querySelector<HTMLOutputElement>("#result");
 
-  if (!pageStatus || !saveButton || !applyButton || !renameButton || !deleteButton || !presetSelect || !result) {
+  if (
+    !pageStatus ||
+    !saveButton ||
+    !applyButton ||
+    !exportButton ||
+    !renameButton ||
+    !deleteButton ||
+    !presetSelect ||
+    !result
+  ) {
     app.textContent = "Popup markup is incomplete.";
     return;
   }
 
   const pageStatusElement = pageStatus;
   const applyButtonElement = applyButton;
+  const exportButtonElement = exportButton;
   const renameButtonElement = renameButton;
   const deleteButtonElement = deleteButton;
   const presetSelectElement = presetSelect;
@@ -114,6 +126,7 @@ async function mount(): Promise<void> {
 
     pageStatusElement.textContent = `${collection.presets.length} presets for this URL`;
     applyButtonElement.disabled = collection.presets.length === 0;
+    exportButtonElement.disabled = collection.presets.length === 0;
     renameButtonElement.disabled = collection.presets.length === 0;
     deleteButtonElement.disabled = collection.presets.length === 0;
   }
@@ -161,6 +174,21 @@ async function mount(): Promise<void> {
 
       const details = response.results.map((item) => `${item.title}: ${item.message}`).join("\n");
       renderResult(result, `${summarizeResults(response.results)}\n${details}`);
+    });
+  });
+
+  exportButton.addEventListener("click", () => {
+    runPopupAction(result, async () => {
+      const collection = await store.getPageCollection(pageKey);
+      const preset = collection.presets.find((candidate) => candidate.id === presetSelectElement.value);
+
+      if (!preset) {
+        renderResult(result, "Select a preset first.");
+        return;
+      }
+
+      await navigator.clipboard.writeText(serializePresetExport(preset));
+      renderResult(result, "Preset JSON copied.");
     });
   });
 

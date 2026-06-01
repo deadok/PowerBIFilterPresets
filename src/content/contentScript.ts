@@ -1,5 +1,8 @@
 import { createPowerBiDomAdapter } from "./powerBiDomAdapter";
+import { parsePresetExport } from "../shared/presetExport";
 import type { ContentRequest, ContentResponse, FilterOperationResult } from "../shared/types";
+
+const LOG_PREFIX = "[Power BI Presets]";
 
 const adapter = createPowerBiDomAdapter(document);
 
@@ -26,12 +29,45 @@ async function handleRequest(request: ContentRequest): Promise<ContentResponse> 
   return { ok: false, error: "Unsupported request." };
 }
 
-chrome.runtime.onMessage.addListener((request: ContentRequest, _sender, sendResponse) => {
-  handleRequest(request)
-    .then(sendResponse)
-    .catch((error: unknown) => {
-      sendResponse({ ok: false, error: error instanceof Error ? error.message : "Unknown content script error." });
-    });
+export async function applyDebugPreset(
+  detail: unknown,
+  requestHandler: (request: ContentRequest) => Promise<ContentResponse> = handleRequest
+): Promise<ContentResponse> {
+  const preset = parsePresetExport(detail);
+  const response = await requestHandler({ type: "APPLY_FILTERS", filters: preset.filters });
+  console.info(LOG_PREFIX, "Debug preset apply result:", response);
+  return response;
+}
 
-  return true;
-});
+export function installDebugPresetHook(
+  targetWindow: Window,
+  requestHandler: (request: ContentRequest) => Promise<ContentResponse> = handleRequest
+): void {
+  targetWindow.addEventListener("PowerBIFilterPresets:applyPreset", (event) => {
+    void applyDebugPreset((event as CustomEvent<unknown>).detail, requestHandler).catch((error: unknown) => {
+      console.error(LOG_PREFIX, "Debug preset apply failed:", error instanceof Error ? error.message : error);
+    });
+  });
+
+  Object.assign(targetWindow, {
+    PowerBIFilterPresets: {
+      applyPreset: (detail: unknown) => applyDebugPreset(detail, requestHandler)
+    }
+  });
+}
+
+if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
+  chrome.runtime.onMessage.addListener((request: ContentRequest, _sender, sendResponse) => {
+    handleRequest(request)
+      .then(sendResponse)
+      .catch((error: unknown) => {
+        sendResponse({ ok: false, error: error instanceof Error ? error.message : "Unknown content script error." });
+      });
+
+    return true;
+  });
+}
+
+if (typeof window !== "undefined") {
+  installDebugPresetHook(window);
+}

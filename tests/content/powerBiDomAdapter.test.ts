@@ -30,6 +30,25 @@ describe("createPowerBiDomAdapter", () => {
     return timer;
   };
 
+  const setRenderedSlicerOptionSelected = (option: HTMLElement, selected: boolean) => {
+    option.setAttribute("aria-selected", selected ? "true" : "false");
+    option.classList.toggle("selected", selected);
+    option.querySelectorAll<HTMLElement>(".slicerCheckbox, .selected").forEach((element) => {
+      element.classList.toggle("selected", selected);
+    });
+  };
+
+  const addSlicerOptionClickHandler = () => {
+    addDocumentListener("click", (event) => {
+      const option = (event.target as Element).closest<HTMLElement>('[role="option"]');
+      if (!option) {
+        return;
+      }
+
+      setRenderedSlicerOptionSelected(option, option.getAttribute("aria-selected") !== "true");
+    });
+  };
+
   beforeEach(() => {
     testAbortController = new AbortController();
     testTimers = [];
@@ -187,6 +206,7 @@ describe("createPowerBiDomAdapter", () => {
         </div>`
       );
     });
+    addSlicerOptionClickHandler();
     addDocumentListener("keydown", (event) => {
       if (event.key === "Escape") {
         closePopup();
@@ -230,6 +250,7 @@ describe("createPowerBiDomAdapter", () => {
         </div>`
       );
     });
+    addSlicerOptionClickHandler();
     addDocumentListener("keydown", (event) => {
       if (event.key === "Escape") {
         closePopup();
@@ -304,6 +325,7 @@ describe("createPowerBiDomAdapter", () => {
         </section>
       </main>
     `;
+    addSlicerOptionClickHandler();
     const adapter = createPowerBiDomAdapter(document);
 
     await expect(adapter.applyListFilterSelection("Product", ["BI"])).resolves.toEqual({
@@ -315,6 +337,35 @@ describe("createPowerBiDomAdapter", () => {
     await expect(adapter.readListFilters()).resolves.toEqual([
       { title: "Product", type: "list", selectedLabels: ["BI"] }
     ]);
+  });
+
+  it("reports failed slicer interactions without mutating option state", async () => {
+    document.body.innerHTML = `
+      <main>
+        <section class="visual customPadding visual-slicer">
+          <div class="slicer-container">
+            <h3 class="slicer-header-text" aria-label="Product" title="Product">Product</h3>
+            <div class="slicerBody" role="listbox" aria-label="Product">
+              <div class="slicerItemContainer" role="option" aria-selected="false" title="BI">
+                <div class="slicerCheckbox"></div>
+                <span class="slicerText">BI</span>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    `;
+    const adapter = createPowerBiDomAdapter(document);
+
+    await expect(adapter.applyListFilterSelection("Product", ["BI"])).resolves.toEqual({
+      title: "Product",
+      status: "interaction_failed",
+      message: "Could not update values: BI."
+    });
+
+    const option = document.querySelector<HTMLElement>('[role="option"][title="BI"]');
+    expect(option?.getAttribute("aria-selected")).toBe("false");
+    expect(option?.querySelector(".slicerCheckbox")?.classList.contains("selected")).toBe(false);
   });
 
   it("opens dropdown slicers before applying saved labels", async () => {
@@ -355,6 +406,9 @@ describe("createPowerBiDomAdapter", () => {
     });
     addDocumentListener("click", (event) => {
       const option = (event.target as Element).closest<HTMLElement>('[role="option"]');
+      if (!option) {
+        return;
+      }
       const title = option?.getAttribute("title");
       if (!title) {
         return;
@@ -365,6 +419,7 @@ describe("createPowerBiDomAdapter", () => {
       } else {
         selectedTitles.add(title);
       }
+      setRenderedSlicerOptionSelected(option, selectedTitles.has(title));
     });
     addDocumentListener("keydown", (event) => {
       if (event.key === "Escape") {
@@ -425,6 +480,9 @@ describe("createPowerBiDomAdapter", () => {
     });
     addDocumentListener("click", (event) => {
       const option = (event.target as Element).closest<HTMLElement>('[role="option"]');
+      if (!option) {
+        return;
+      }
       const title = option?.getAttribute("title");
       if (!title) {
         return;
@@ -435,6 +493,7 @@ describe("createPowerBiDomAdapter", () => {
       } else {
         selectedTitles.add(title);
       }
+      setRenderedSlicerOptionSelected(option, selectedTitles.has(title));
     });
     addDocumentListener("keydown", (event) => {
       if (event.key === "Escape") {
@@ -498,7 +557,11 @@ describe("createPowerBiDomAdapter", () => {
     });
     addDocumentListener("click", (event) => {
       const option = (event.target as Element).closest<HTMLElement>('[role="option"]');
-      const title = option?.getAttribute("title");
+      if (!option) {
+        return;
+      }
+
+      const title = option.getAttribute("title");
       if (!title) {
         return;
       }
@@ -554,6 +617,7 @@ describe("createPowerBiDomAdapter", () => {
         </div>
       </div>
     `;
+    addSlicerOptionClickHandler();
     const adapter = createPowerBiDomAdapter(document);
 
     await expect(adapter.applyListFilterSelection("Product", ["коммуникации", "рейтинг"])).resolves.toEqual({
@@ -594,6 +658,7 @@ describe("createPowerBiDomAdapter", () => {
         </section>
       </main>
     `;
+    addSlicerOptionClickHandler();
     const adapter = createPowerBiDomAdapter(document);
 
     await expect(adapter.applyListFilterSelection("Product", ["коммуникации", "рейтинг"])).resolves.toEqual({
@@ -648,7 +713,11 @@ describe("createPowerBiDomAdapter", () => {
     });
     addDocumentListener("click", (event) => {
       const option = (event.target as Element).closest<HTMLElement>('[role="option"]');
-      const title = option?.getAttribute("title");
+      if (!option) {
+        return;
+      }
+
+      const title = option.getAttribute("title");
       if (!title) {
         return;
       }
@@ -658,6 +727,7 @@ describe("createPowerBiDomAdapter", () => {
       } else {
         selectedTitles.add(title);
       }
+      setRenderedSlicerOptionSelected(option, selectedTitles.has(title));
     });
     addDocumentListener("keydown", (event) => {
       if (event.key === "Escape") {
@@ -679,6 +749,358 @@ describe("createPowerBiDomAdapter", () => {
     await expect(adapter.readListFilters()).resolves.toEqual([
       { title: "Product", type: "list", selectedLabels: ["rating"] }
     ]);
+  });
+
+  it("scrolls virtualized dropdown slicer options while applying saved labels", async () => {
+    document.body.innerHTML = `
+      <main>
+        <section class="visual customPadding visual-slicer">
+          <div class="slicer-container">
+            <h3 class="slicer-header-text" aria-label="Product" title="Product">Product</h3>
+            <div class="slicer-dropdown-menu" role="combobox" aria-label="Product">
+              <div class="slicer-restatement">All</div>
+            </div>
+          </div>
+        </section>
+      </main>
+    `;
+    const selectedTitles = new Set(["beta"]);
+    const labels = ["alpha", "beta", "gamma", "delta"];
+    const rowHeight = 20;
+    const visibleRows = 2;
+    const renderOption = (title: string) => `
+      <div class="slicerItemContainer" role="option" aria-selected="${selectedTitles.has(title)}" title="${title}">
+        <div class="slicerCheckbox${selectedTitles.has(title) ? " selected" : ""}"></div>
+        <span class="slicerText">${title}</span>
+      </div>`;
+    const visibleLabelsFor = (scrollTop: number) => {
+      const start = Math.min(labels.length - visibleRows, Math.floor(scrollTop / rowHeight));
+      return labels.slice(start, start + visibleRows);
+    };
+    const renderVisibleOptions = (listbox: HTMLElement) => {
+      listbox.innerHTML = visibleLabelsFor(listbox.scrollTop).map(renderOption).join("");
+    };
+    const attachVirtualScrollMetrics = (listbox: HTMLElement) => {
+      Object.defineProperty(listbox, "clientHeight", { configurable: true, value: rowHeight * visibleRows });
+      Object.defineProperty(listbox, "scrollHeight", { configurable: true, value: rowHeight * labels.length });
+    };
+    const renderPopup = (scrollTop = 0) => {
+      document.querySelector(".slicer-dropdown-popup")?.remove();
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        `<div class="slicer-dropdown-popup visual themeableElement focused">
+          <div class="slicerBody" role="listbox" aria-label="Product"></div>
+        </div>`
+      );
+      const listbox = document.querySelector<HTMLElement>('[role="listbox"][aria-label="Product"]');
+      expect(listbox).not.toBeNull();
+      attachVirtualScrollMetrics(listbox!);
+      listbox!.scrollTop = scrollTop;
+      renderVisibleOptions(listbox!);
+      listbox!.addEventListener("scroll", () => renderVisibleOptions(listbox!));
+    };
+    const closePopup = () => document.querySelector(".slicer-dropdown-popup")?.remove();
+    document.querySelector<HTMLElement>('[role="combobox"]')?.addEventListener("click", () => {
+      if (document.querySelector(".slicer-dropdown-popup")) {
+        closePopup();
+        return;
+      }
+
+      renderPopup();
+    });
+    addDocumentListener("click", (event) => {
+      const option = (event.target as Element).closest<HTMLElement>('[role="option"]');
+      if (!option) {
+        return;
+      }
+
+      const title = option.getAttribute("title");
+      if (!title) {
+        return;
+      }
+
+      if (selectedTitles.has(title)) {
+        selectedTitles.delete(title);
+      } else {
+        selectedTitles.add(title);
+      }
+      const listbox = option.closest<HTMLElement>('[role="listbox"]');
+      if (listbox) {
+        renderVisibleOptions(listbox);
+      }
+    });
+    addSlicerOptionClickHandler();
+    addDocumentListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closePopup();
+      }
+    });
+    const adapter = createPowerBiDomAdapter(document);
+
+    await expect(adapter.applyListFilterSelection("Product", ["delta"])).resolves.toEqual({
+      title: "Product",
+      status: "applied",
+      message: "Applied 1 value."
+    });
+
+    expect(selectedTitles).toEqual(new Set(["delta"]));
+  });
+
+  it("scrolls virtualized dropdown slicer viewports while applying saved labels", async () => {
+    document.body.innerHTML = `
+      <main>
+        <section class="visual customPadding visual-slicer">
+          <div class="slicer-container">
+            <h3 class="slicer-header-text" aria-label="Product" title="Product">Product</h3>
+            <div class="slicer-dropdown-menu" role="combobox" aria-label="Product">
+              <div class="slicer-restatement">All</div>
+            </div>
+          </div>
+        </section>
+      </main>
+    `;
+    const selectedTitles = new Set(["beta"]);
+    const labels = ["alpha", "beta", "gamma", "delta"];
+    const rowHeight = 20;
+    const visibleRows = 2;
+    const renderOption = (title: string) => `
+      <div class="slicerItemContainer" role="option" aria-selected="${selectedTitles.has(title)}" title="${title}">
+        <div class="slicerCheckbox${selectedTitles.has(title) ? " selected" : ""}"></div>
+        <span class="slicerText">${title}</span>
+      </div>`;
+    const visibleLabelsFor = (scrollTop: number) => {
+      const start = Math.min(labels.length - visibleRows, Math.floor(scrollTop / rowHeight));
+      return labels.slice(start, start + visibleRows);
+    };
+    const renderVisibleOptions = (viewport: HTMLElement) => {
+      const listbox = viewport.querySelector<HTMLElement>('[role="listbox"]');
+      expect(listbox).not.toBeNull();
+      listbox!.innerHTML = visibleLabelsFor(viewport.scrollTop).map(renderOption).join("");
+    };
+    const attachVirtualScrollMetrics = (viewport: HTMLElement) => {
+      Object.defineProperty(viewport, "clientHeight", { configurable: true, value: rowHeight * visibleRows });
+      Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: rowHeight * labels.length });
+    };
+    const renderPopup = (scrollTop = 0) => {
+      document.querySelector(".slicer-dropdown-popup")?.remove();
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        `<div class="slicer-dropdown-popup visual themeableElement focused">
+          <div class="slicer-viewport">
+            <div class="slicerBody" role="listbox" aria-label="Product"></div>
+          </div>
+        </div>`
+      );
+      const viewport = document.querySelector<HTMLElement>(".slicer-viewport");
+      expect(viewport).not.toBeNull();
+      attachVirtualScrollMetrics(viewport!);
+      viewport!.scrollTop = scrollTop;
+      renderVisibleOptions(viewport!);
+      viewport!.addEventListener("scroll", () => renderVisibleOptions(viewport!));
+    };
+    const closePopup = () => document.querySelector(".slicer-dropdown-popup")?.remove();
+    document.querySelector<HTMLElement>('[role="combobox"]')?.addEventListener("click", () => {
+      if (document.querySelector(".slicer-dropdown-popup")) {
+        closePopup();
+        return;
+      }
+
+      renderPopup();
+    });
+    addDocumentListener("click", (event) => {
+      const option = (event.target as Element).closest<HTMLElement>('[role="option"]');
+      if (!option) {
+        return;
+      }
+
+      const title = option.getAttribute("title");
+      if (!title) {
+        return;
+      }
+
+      if (selectedTitles.has(title)) {
+        selectedTitles.delete(title);
+      } else {
+        selectedTitles.add(title);
+      }
+      const viewport = option.closest<HTMLElement>(".slicer-viewport");
+      if (viewport) {
+        renderVisibleOptions(viewport);
+      }
+    });
+    addDocumentListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closePopup();
+      }
+    });
+    const adapter = createPowerBiDomAdapter(document);
+
+    await expect(adapter.applyListFilterSelection("Product", ["delta"])).resolves.toEqual({
+      title: "Product",
+      status: "applied",
+      message: "Applied 1 value."
+    });
+
+    expect(selectedTitles).toEqual(new Set(["delta"]));
+  });
+
+  it("re-queries the live dropdown listbox after virtualization replaces it while scrolling", async () => {
+    document.body.innerHTML = `
+      <main>
+        <section class="visual customPadding visual-slicer">
+          <div class="slicer-container">
+            <h3 class="slicer-header-text" aria-label="Product" title="Product">Product</h3>
+            <div class="slicer-dropdown-menu" role="combobox" aria-label="Product">
+              <div class="slicer-restatement">All</div>
+            </div>
+          </div>
+        </section>
+      </main>
+    `;
+    const selectedTitles = new Set(["beta"]);
+    const labels = ["alpha", "beta", "gamma", "delta"];
+    const rowHeight = 20;
+    const visibleRows = 2;
+    const renderOption = (title: string) => `
+      <div class="slicerItemContainer" role="option" aria-selected="${selectedTitles.has(title)}" title="${title}">
+        <div class="slicerCheckbox${selectedTitles.has(title) ? " selected" : ""}"></div>
+        <span class="slicerText">${title}</span>
+      </div>`;
+    const visibleLabelsFor = (scrollTop: number) => {
+      const start = Math.min(labels.length - visibleRows, Math.floor(scrollTop / rowHeight));
+      return labels.slice(start, start + visibleRows);
+    };
+    const attachVirtualScrollMetrics = (element: HTMLElement) => {
+      Object.defineProperty(element, "clientHeight", { configurable: true, value: rowHeight * visibleRows });
+      Object.defineProperty(element, "scrollHeight", { configurable: true, value: rowHeight * labels.length });
+    };
+    const renderPopup = (scrollTop = 0) => {
+      document.querySelector(".slicer-dropdown-popup")?.remove();
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        `<div class="slicer-dropdown-popup visual themeableElement focused">
+          <div class="slicerBody" role="listbox" aria-label="Product">
+            ${visibleLabelsFor(scrollTop).map(renderOption).join("")}
+          </div>
+        </div>`
+      );
+      const listbox = document.querySelector<HTMLElement>('[role="listbox"][aria-label="Product"]');
+      expect(listbox).not.toBeNull();
+      attachVirtualScrollMetrics(listbox!);
+      listbox!.scrollTop = scrollTop;
+      listbox!.addEventListener("scroll", () => renderPopup(listbox!.scrollTop), { once: true });
+    };
+    const closePopup = () => document.querySelector(".slicer-dropdown-popup")?.remove();
+    document.querySelector<HTMLElement>('[role="combobox"]')?.addEventListener("click", () => {
+      if (document.querySelector(".slicer-dropdown-popup")) {
+        closePopup();
+        return;
+      }
+
+      renderPopup();
+    });
+    addDocumentListener("click", (event) => {
+      const option = (event.target as Element).closest<HTMLElement>('[role="option"]');
+      if (!option || !option.isConnected) {
+        return;
+      }
+
+      const title = option.getAttribute("title");
+      if (!title) {
+        return;
+      }
+
+      if (selectedTitles.has(title)) {
+        selectedTitles.delete(title);
+      } else {
+        selectedTitles.add(title);
+      }
+      const listbox = option.closest<HTMLElement>('[role="listbox"]');
+      renderPopup(listbox?.scrollTop ?? 0);
+    });
+    addDocumentListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closePopup();
+      }
+    });
+    const adapter = createPowerBiDomAdapter(document);
+
+    await expect(adapter.applyListFilterSelection("Product", ["delta"])).resolves.toEqual({
+      title: "Product",
+      status: "applied",
+      message: "Applied 1 value."
+    });
+
+    expect(selectedTitles).toEqual(new Set(["delta"]));
+  });
+
+  it("reports timeout instead of missing values when a virtualized dropdown exceeds the scan budget", async () => {
+    document.body.innerHTML = `
+      <main>
+        <section class="visual customPadding visual-slicer">
+          <div class="slicer-container">
+            <h3 class="slicer-header-text" aria-label="Product" title="Product">Product</h3>
+            <div class="slicer-dropdown-menu" role="combobox" aria-label="Product">
+              <div class="slicer-restatement">All</div>
+            </div>
+          </div>
+        </section>
+      </main>
+    `;
+    const selectedTitles = new Set(["value-001"]);
+    const labels = Array.from({ length: 500 }, (_value, index) => `value-${String(index + 1).padStart(3, "0")}`);
+    const rowHeight = 20;
+    const visibleRows = 2;
+    const renderOption = (title: string) => `
+      <div class="slicerItemContainer" role="option" aria-selected="${selectedTitles.has(title)}" title="${title}">
+        <div class="slicerCheckbox${selectedTitles.has(title) ? " selected" : ""}"></div>
+        <span class="slicerText">${title}</span>
+      </div>`;
+    const visibleLabelsFor = (scrollTop: number) => {
+      const start = Math.min(labels.length - visibleRows, Math.floor(scrollTop / rowHeight));
+      return labels.slice(start, start + visibleRows);
+    };
+    const renderVisibleOptions = (listbox: HTMLElement) => {
+      listbox.innerHTML = visibleLabelsFor(listbox.scrollTop).map(renderOption).join("");
+    };
+    const attachVirtualScrollMetrics = (listbox: HTMLElement) => {
+      Object.defineProperty(listbox, "clientHeight", { configurable: true, value: rowHeight * visibleRows });
+      Object.defineProperty(listbox, "scrollHeight", { configurable: true, value: rowHeight * labels.length });
+    };
+    const closePopup = () => document.querySelector(".slicer-dropdown-popup")?.remove();
+    document.querySelector<HTMLElement>('[role="combobox"]')?.addEventListener("click", () => {
+      if (document.querySelector(".slicer-dropdown-popup")) {
+        closePopup();
+        return;
+      }
+
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        `<div class="slicer-dropdown-popup visual themeableElement focused">
+          <div class="slicerBody" role="listbox" aria-label="Product"></div>
+        </div>`
+      );
+      const listbox = document.querySelector<HTMLElement>('[role="listbox"][aria-label="Product"]');
+      expect(listbox).not.toBeNull();
+      attachVirtualScrollMetrics(listbox!);
+      listbox!.scrollTop = 0;
+      renderVisibleOptions(listbox!);
+      listbox!.addEventListener("scroll", () => renderVisibleOptions(listbox!));
+    });
+    addSlicerOptionClickHandler();
+    addDocumentListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closePopup();
+      }
+    });
+    const adapter = createPowerBiDomAdapter(document);
+
+    await expect(adapter.applyListFilterSelection("Product", ["value-499"])).resolves.toEqual({
+      title: "Product",
+      status: "timeout",
+      message: "Timed out while scanning dropdown values."
+    });
+    expect(selectedTitles).toEqual(new Set(["value-001"]));
   });
 
   it("closes dropdown slicer popups opened while applying saved labels", async () => {
@@ -718,6 +1140,7 @@ describe("createPowerBiDomAdapter", () => {
         </div>`
       );
     });
+    addSlicerOptionClickHandler();
     addDocumentListener("keydown", (event) => {
       if (event.key === "Escape") {
         closePopup();
@@ -747,6 +1170,12 @@ describe("createPowerBiDomAdapter", () => {
       </main>
     `;
     const combobox = document.querySelector<HTMLElement>('[role="combobox"]');
+    const selectedTitles = new Set(["ops"]);
+    const renderOption = (title: string) => `
+      <div class="slicerItemContainer" role="option" aria-selected="${selectedTitles.has(title)}" title="${title}">
+        <div class="slicerCheckbox${selectedTitles.has(title) ? " selected" : ""}"></div>
+        <span class="slicerText">${title}</span>
+      </div>`;
     const closePopup = () => document.querySelector(".slicer-dropdown-popup")?.remove();
     combobox?.addEventListener("click", () => {
       if (document.querySelector(".slicer-dropdown-popup")) {
@@ -758,17 +1187,29 @@ describe("createPowerBiDomAdapter", () => {
         "beforeend",
         `<div class="slicer-dropdown-popup visual themeableElement focused">
           <div class="slicerBody" role="listbox" aria-label="Product">
-            <div class="slicerItemContainer" role="option" aria-selected="true" title="ops">
-              <div class="slicerCheckbox selected"></div>
-              <span class="slicerText">ops</span>
-            </div>
-            <div class="slicerItemContainer" role="option" aria-selected="false" title="rating">
-              <div class="slicerCheckbox"></div>
-              <span class="slicerText">rating</span>
-            </div>
+            ${renderOption("ops")}
+            ${renderOption("rating")}
           </div>
         </div>`
       );
+    });
+    addDocumentListener("click", (event) => {
+      const option = (event.target as Element).closest<HTMLElement>('[role="option"]');
+      if (!option) {
+        return;
+      }
+
+      const title = option.getAttribute("title");
+      if (!title) {
+        return;
+      }
+
+      if (selectedTitles.has(title)) {
+        selectedTitles.delete(title);
+      } else {
+        selectedTitles.add(title);
+      }
+      setRenderedSlicerOptionSelected(option, selectedTitles.has(title));
     });
     addDocumentListener("keydown", (event) => {
       if (event.key === "Escape") {
@@ -777,12 +1218,13 @@ describe("createPowerBiDomAdapter", () => {
     });
     const adapter = createPowerBiDomAdapter(document);
 
-    await expect(adapter.applyListFilterSelection("Product", ["alerts"])).resolves.toEqual({
+    await expect(adapter.applyListFilterSelection("Product", ["rating", "alerts"])).resolves.toEqual({
       title: "Product",
       status: "missing_value",
       message: "Missing values: alerts."
     });
     expect(document.querySelector(".slicer-dropdown-popup")).toBeNull();
+    expect(selectedTitles).toEqual(new Set(["ops"]));
   });
 
   it("reports missing filters", async () => {
@@ -795,7 +1237,7 @@ describe("createPowerBiDomAdapter", () => {
     });
   });
 
-  it("reports missing values without changing other filters", async () => {
+  it("reports missing checkbox values without changing existing selections", async () => {
     const adapter = createPowerBiDomAdapter(document);
 
     await expect(adapter.applyListFilterSelection("Region", ["Brazil"])).resolves.toEqual({

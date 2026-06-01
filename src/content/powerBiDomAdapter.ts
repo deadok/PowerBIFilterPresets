@@ -27,8 +27,28 @@ type SelectionTransition = {
   afterSelected: boolean;
 };
 
+type SlicerSelectionResult = {
+  availableLabels: string[];
+  failedLabels: string[];
+  missingLabels: string[];
+  scanCompleted: boolean;
+};
+
+type SlicerListboxSnapshot = {
+  listbox: HTMLElement;
+  scrollElement: HTMLElement;
+  options: HTMLElement[];
+};
+
+type ScrollPlan = {
+  completed: boolean;
+  positions: number[];
+};
+
 const DROPDOWN_OPTIONS_TIMEOUT_MS = 500;
 const DROPDOWN_OPTIONS_INTERVAL_MS = 25;
+const SLICER_SELECTION_VERIFY_TIMEOUT_MS = 250;
+const SLICER_SCAN_MAX_SCROLL_STEPS = 160;
 const LOG_PREFIX = "[Power BI Presets]";
 
 function delay(ms: number): Promise<void> {
@@ -100,25 +120,33 @@ function slicerOptions(control: SlicerControl): HTMLElement[] {
 
 function externalSlicerOptions(roots: ParentNode | ParentNode[], title: string): HTMLElement[] {
   const options: HTMLElement[] = [];
+
+  for (const listbox of externalSlicerListboxes(roots, title)) {
+    options.push(...optionsInListbox(listbox));
+  }
+
+  return options;
+}
+
+function externalSlicerListboxes(roots: ParentNode | ParentNode[], title: string): HTMLElement[] {
+  const listboxes: HTMLElement[] = [];
   const seen = new Set<HTMLElement>();
 
   for (const root of Array.isArray(roots) ? roots : [roots]) {
-    const listboxes = Array.from(root.querySelectorAll<HTMLElement>('[role="listbox"]')).filter((listbox) => {
+    const matchingListboxes = Array.from(root.querySelectorAll<HTMLElement>('[role="listbox"]')).filter((listbox) => {
       const label = listbox.getAttribute("aria-label")?.trim();
-      return label === title && !listbox.closest(".slicer-container");
+      return label === title && listbox.isConnected && !listbox.closest(".slicer-container");
     });
 
-    for (const listbox of listboxes) {
-      for (const option of Array.from(listbox.querySelectorAll<HTMLElement>('[role="option"]'))) {
-        if (!seen.has(option)) {
-          seen.add(option);
-          options.push(option);
-        }
+    for (const listbox of matchingListboxes) {
+      if (!seen.has(listbox)) {
+        seen.add(listbox);
+        listboxes.push(listbox);
       }
     }
   }
 
-  return options;
+  return listboxes;
 }
 
 async function closeDropdownOpenedForRead(combobox: HTMLElement, options: { title?: string } = {}): Promise<void> {
@@ -253,13 +281,13 @@ function setCheckbox(checkbox: HTMLInputElement, checked: boolean): SelectionTra
   };
 }
 
-function setSlicerOption(option: HTMLElement, selected: boolean): SelectionTransition {
+async function setSlicerOption(
+  option: HTMLElement,
+  selected: boolean,
+  findLiveOption: (label: string) => HTMLElement | null = () => null
+): Promise<SelectionTransition> {
   const label = labelForSlicerOption(option);
-  const findMatchingOptions = () =>
-    Array.from(option.ownerDocument.querySelectorAll<HTMLElement>('[role="option"]')).filter(
-      (currentOption) => currentOption === option || labelForSlicerOption(currentOption) === label
-    );
-  const liveOption = findMatchingOptions().find((currentOption) => currentOption.isConnected) ?? option;
+  const liveOption = findLiveOption(label) ?? (option.isConnected ? option : null) ?? option;
   const beforeSelected = isSlicerOptionSelected(liveOption);
   const clickAttempted = beforeSelected !== selected;
 
@@ -267,29 +295,262 @@ function setSlicerOption(option: HTMLElement, selected: boolean): SelectionTrans
     liveOption.click();
   }
 
-  const matchingOptions = findMatchingOptions();
-  for (const currentOption of matchingOptions.length > 0 ? matchingOptions : [option]) {
-    currentOption.setAttribute("aria-selected", selected ? "true" : "false");
-    if (!selected) {
-      currentOption.classList.remove("selected");
-    }
-    const checkboxMarkers = [
-      ...(currentOption.classList.contains("slicerCheckbox") ? [currentOption] : []),
-      ...Array.from(currentOption.querySelectorAll<HTMLElement>(".slicerCheckbox, .selected"))
-    ];
-    checkboxMarkers.forEach((element) => {
-      element.classList.toggle("selected", selected);
-    });
+  const deadline = Date.now() + SLICER_SELECTION_VERIFY_TIMEOUT_MS;
+  let updatedLiveOption = findLiveOption(label) ?? (liveOption.isConnected ? liveOption : null);
+  while (
+    clickAttempted &&
+    updatedLiveOption &&
+    isSlicerOptionSelected(updatedLiveOption) !== selected &&
+    Date.now() <= deadline
+  ) {
+    await delay(DROPDOWN_OPTIONS_INTERVAL_MS);
+    updatedLiveOption = findLiveOption(label) ?? (liveOption.isConnected ? liveOption : null);
   }
-
-  const updatedLiveOption = findMatchingOptions().find((currentOption) => currentOption.isConnected) ?? liveOption;
+  const afterSelected = updatedLiveOption ? isSlicerOptionSelected(updatedLiveOption) : beforeSelected;
 
   return {
     label,
     beforeSelected,
     clickAttempted,
-    afterSelected: isSlicerOptionSelected(updatedLiveOption)
+    afterSelected
   };
+}
+
+function listboxesForOptions(options: HTMLElement[]): HTMLElement[] {
+  const listboxes: HTMLElement[] = [];
+  const seen = new Set<HTMLElement>();
+
+  for (const option of options) {
+    const listbox = option.closest<HTMLElement>('[role="listbox"]');
+    if (listbox && !seen.has(listbox)) {
+      seen.add(listbox);
+      listboxes.push(listbox);
+    }
+  }
+
+  return listboxes;
+}
+
+function optionsInListbox(listbox: HTMLElement): HTMLElement[] {
+  return Array.from(listbox.querySelectorAll<HTMLElement>('[role="option"]'));
+}
+
+function liveSlicerListboxes(root: ParentNode, control: SlicerControl, title: string): HTMLElement[] {
+  const listboxes: HTMLElement[] = [];
+  const seen = new Set<HTMLElement>();
+  const addListbox = (listbox: HTMLElement) => {
+    if (listbox.isConnected && !seen.has(listbox)) {
+      seen.add(listbox);
+      listboxes.push(listbox);
+    }
+  };
+
+  Array.from(control.element.querySelectorAll<HTMLElement>('[role="listbox"]')).forEach(addListbox);
+  externalSlicerListboxes([root, control.element.ownerDocument], title).forEach(addListbox);
+
+  return listboxes;
+}
+
+function slicerListboxSnapshots(root: ParentNode, control: SlicerControl, title: string): SlicerListboxSnapshot[] {
+  return liveSlicerListboxes(root, control, title).map((listbox) => ({
+    listbox,
+    scrollElement: scrollElementForListbox(listbox),
+    options: optionsInListbox(listbox)
+  }));
+}
+
+function liveSlicerOptionByLabel(
+  root: ParentNode,
+  control: SlicerControl,
+  title: string,
+  label: string
+): HTMLElement | null {
+  for (const snapshot of slicerListboxSnapshots(root, control, title)) {
+    const option = snapshot.options.find((currentOption) => labelForSlicerOption(currentOption) === label);
+    if (option) {
+      return option;
+    }
+  }
+
+  return null;
+}
+
+function scrollElementForListbox(listbox: HTMLElement): HTMLElement {
+  let candidate: HTMLElement | null = listbox;
+
+  while (candidate && candidate !== listbox.ownerDocument.body) {
+    if (candidate.clientHeight > 0 && candidate.scrollHeight > candidate.clientHeight) {
+      return candidate;
+    }
+    candidate = candidate.parentElement;
+  }
+
+  return listbox;
+}
+
+function scrollPlanForElement(element: HTMLElement): ScrollPlan {
+  const maxScrollTop = Math.max(0, element.scrollHeight - element.clientHeight);
+  if (maxScrollTop === 0 || element.clientHeight <= 0) {
+    return { completed: true, positions: [element.scrollTop] };
+  }
+
+  const step = Math.max(1, Math.floor(element.clientHeight * 0.8));
+  const positions = new Set<number>([element.scrollTop, 0, maxScrollTop]);
+
+  for (let scrollTop = 0; scrollTop < maxScrollTop; scrollTop += step) {
+    positions.add(Math.min(scrollTop, maxScrollTop));
+  }
+
+  const sortedPositions = Array.from(positions).sort((left, right) => left - right);
+  if (sortedPositions.length <= SLICER_SCAN_MAX_SCROLL_STEPS) {
+    return { completed: true, positions: sortedPositions };
+  }
+
+  return { completed: false, positions: sortedPositions.slice(0, SLICER_SCAN_MAX_SCROLL_STEPS) };
+}
+
+function dispatchWheel(element: HTMLElement, deltaY: number): void {
+  const EventConstructor = element.ownerDocument.defaultView?.WheelEvent;
+  const event =
+    typeof EventConstructor === "function"
+      ? new EventConstructor("wheel", { bubbles: true, cancelable: true, deltaY })
+      : new Event("wheel", { bubbles: true, cancelable: true });
+  element.dispatchEvent(event);
+}
+
+function scrollSlicerElement(scrollElement: HTMLElement, listbox: HTMLElement, scrollTop: number): void {
+  const deltaY = scrollTop - scrollElement.scrollTop;
+  dispatchWheel(listbox, deltaY);
+  if (listbox !== scrollElement) {
+    dispatchWheel(scrollElement, deltaY);
+  }
+
+  if (deltaY !== 0 && typeof scrollElement.scrollBy === "function") {
+    scrollElement.scrollBy({ top: deltaY, behavior: "auto" });
+  }
+
+  scrollElement.scrollTop = scrollTop;
+  scrollElement.dispatchEvent(new Event("scroll", { bubbles: true }));
+}
+
+async function scanSlicerOptions(
+  root: ParentNode,
+  control: SlicerControl,
+  title: string,
+  initialOptions: HTMLElement[],
+  onOptions: (options: HTMLElement[]) => void | Promise<void>,
+  intervalMs = DROPDOWN_OPTIONS_INTERVAL_MS
+): Promise<boolean> {
+  const initialListboxes = slicerListboxSnapshots(root, control, title);
+  const listboxes = initialListboxes.length > 0 ? initialListboxes : listboxesForOptions(initialOptions).map((listbox) => ({
+    listbox,
+    scrollElement: scrollElementForListbox(listbox),
+    options: optionsInListbox(listbox)
+  }));
+
+  if (listboxes.length === 0) {
+    await onOptions(initialOptions.filter((option) => option.isConnected));
+    return true;
+  }
+
+  let completed = true;
+  for (const initialSnapshot of listboxes) {
+    const scrollPlan = scrollPlanForElement(initialSnapshot.scrollElement);
+    completed &&= scrollPlan.completed;
+
+    for (const scrollTop of scrollPlan.positions) {
+      const snapshotsBeforeScroll = slicerListboxSnapshots(root, control, title);
+      const snapshots = snapshotsBeforeScroll.length > 0 ? snapshotsBeforeScroll : [initialSnapshot];
+
+      for (const snapshot of snapshots) {
+        scrollSlicerElement(snapshot.scrollElement, snapshot.listbox, scrollTop);
+        await delay(intervalMs);
+      }
+
+      const liveSnapshots = slicerListboxSnapshots(root, control, title);
+      const snapshotsAfterScroll = liveSnapshots.length > 0 ? liveSnapshots : snapshots;
+      for (const snapshot of snapshotsAfterScroll) {
+        await onOptions(snapshot.options.filter((option) => option.isConnected));
+      }
+    }
+  }
+
+  return completed;
+}
+
+async function applySlicerOptionsSelection(
+  root: ParentNode,
+  control: SlicerControl,
+  title: string,
+  selectedLabels: string[],
+  options: {
+    onOpened?: (combobox: HTMLElement) => void;
+    onResolvedExternalOptions?: (optionCount: number) => void;
+    onWaitingForExternalOptions?: (timeoutMs: number, intervalMs: number) => void;
+  } = {}
+): Promise<SlicerSelectionResult> {
+  const desiredLabels = new Set(selectedLabels);
+  const availableLabels: string[] = [];
+  const failedLabels: string[] = [];
+  const seenLabels = new Set<string>();
+  const initialOptions = await resolveSlicerOptions(root, control, options);
+
+  const discoveryCompleted = await scanSlicerOptions(root, control, title, initialOptions, (currentOptions) => {
+    for (const option of currentOptions) {
+      const label = labelForSlicerOption(option);
+      if (label.length === 0 || label === "Select all" || seenLabels.has(label)) {
+        continue;
+      }
+
+      seenLabels.add(label);
+      availableLabels.push(label);
+    }
+  });
+
+  const missingLabels = selectedLabels.filter((label) => !seenLabels.has(label));
+
+  console.debug(LOG_PREFIX, "Applying list filter selection", {
+    title,
+    controlKind: control.kind,
+    desiredLabels: selectedLabels,
+    availableLabels
+  });
+
+  if (!discoveryCompleted) {
+    return { availableLabels, failedLabels: [], missingLabels: [], scanCompleted: false };
+  }
+
+  if (missingLabels.length > 0) {
+    return { availableLabels, failedLabels, missingLabels, scanCompleted: true };
+  }
+
+  const appliedLabels = new Set<string>();
+  const applyCompleted = await scanSlicerOptions(root, control, title, initialOptions, async (currentOptions) => {
+    for (const option of currentOptions) {
+      const label = labelForSlicerOption(option);
+      if (label.length === 0 || label === "Select all" || appliedLabels.has(label)) {
+        continue;
+      }
+
+      const selected = desiredLabels.has(label);
+      const transition = await setSlicerOption(option, selected, (currentLabel) =>
+        liveSlicerOptionByLabel(root, control, title, currentLabel)
+      );
+      logSelectionTransition(
+        selected ? "Selecting filter value" : "Clearing filter value",
+        title,
+        control.kind,
+        transition,
+        selected
+      );
+      if (transition.afterSelected !== selected) {
+        failedLabels.push(label);
+      }
+      appliedLabels.add(label);
+    }
+  });
+
+  return { availableLabels, failedLabels, missingLabels, scanCompleted: applyCompleted };
 }
 
 async function selectedLabelsForControl(root: ParentNode, control: ListControl): Promise<string[]> {
@@ -360,27 +621,66 @@ export function createPowerBiDomAdapter(root: ParentNode = document): PowerBiDom
       let openedCombobox: HTMLElement | null = null;
 
       try {
-        const entries =
-          control.kind === "checkbox"
-            ? Array.from(control.element.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')).map(
-                (checkbox) => [labelForCheckbox(checkbox), checkbox] as const
-              )
-            : (await resolveSlicerOptions(root, control, {
-                onOpened: (combobox) => {
-                  openedCombobox = combobox;
-                  console.info(LOG_PREFIX, "Opened dropdown", {
-                    title,
-                    ariaLabel: combobox.getAttribute("aria-label")?.trim() || ""
-                  });
-                },
-                onResolvedExternalOptions: (optionCount) => {
-                  console.info(LOG_PREFIX, "Resolved dropdown options", { title, optionCount });
-                },
-                onWaitingForExternalOptions: (timeoutMs, intervalMs) => {
-                  console.info(LOG_PREFIX, "Waiting for dropdown options", { title, timeoutMs, intervalMs });
-                }
-              })).map((option) => [labelForSlicerOption(option), option] as const);
+        if (control.kind === "slicer") {
+          const result = await applySlicerOptionsSelection(root, control, title, selectedLabels, {
+            onOpened: (combobox) => {
+              openedCombobox = combobox;
+              console.info(LOG_PREFIX, "Opened dropdown", {
+                title,
+                ariaLabel: combobox.getAttribute("aria-label")?.trim() || ""
+              });
+            },
+            onResolvedExternalOptions: (optionCount) => {
+              console.info(LOG_PREFIX, "Resolved dropdown options", { title, optionCount });
+            },
+            onWaitingForExternalOptions: (timeoutMs, intervalMs) => {
+              console.info(LOG_PREFIX, "Waiting for dropdown options", { title, timeoutMs, intervalMs });
+            }
+          });
 
+          if (!result.scanCompleted) {
+            console.warn(LOG_PREFIX, "Timed out while scanning dropdown values", {
+              title,
+              desiredLabels: selectedLabels,
+              availableLabels: result.availableLabels
+            });
+            return { title, status: "timeout", message: "Timed out while scanning dropdown values." };
+          }
+
+          if (result.failedLabels.length > 0) {
+            console.warn(LOG_PREFIX, "Filter values failed while applying preset", {
+              title,
+              desiredLabels: selectedLabels,
+              failedLabels: result.failedLabels,
+              availableLabels: result.availableLabels
+            });
+            return {
+              title,
+              status: "interaction_failed",
+              message: `Could not update values: ${result.failedLabels.join(", ")}.`
+            };
+          }
+
+          if (result.missingLabels.length > 0) {
+            console.warn(LOG_PREFIX, "Missing filter values while applying preset", {
+              title,
+              desiredLabels: selectedLabels,
+              missingLabels: result.missingLabels,
+              availableLabels: result.availableLabels
+            });
+            return { title, status: "missing_value", message: `Missing values: ${result.missingLabels.join(", ")}.` };
+          }
+
+          return {
+            title,
+            status: "applied",
+            message: `Applied ${selectedLabels.length} ${selectedLabels.length === 1 ? "value" : "values"}.`
+          };
+        }
+
+        const entries = Array.from(control.element.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')).map(
+          (checkbox) => [labelForCheckbox(checkbox), checkbox] as const
+        );
         const byLabel = new Map(entries.filter(([label]) => label.length > 0 && label !== "Select all"));
         const availableLabels = Array.from(byLabel.keys());
         const missing = selectedLabels.filter((label) => !byLabel.has(label));
@@ -403,32 +703,18 @@ export function createPowerBiDomAdapter(root: ParentNode = document): PowerBiDom
         }
 
         for (const [label, element] of byLabel) {
-          let transition: SelectionTransition;
-          if (control.kind === "checkbox") {
-            transition = setCheckbox(element as HTMLInputElement, false);
-          } else {
-            transition = setSlicerOption(element as HTMLElement, false);
-          }
+          const transition = setCheckbox(element, false);
           logSelectionTransition("Clearing filter value", title, control.kind, { ...transition, label }, false);
         }
 
         for (const label of selectedLabels) {
           const element = byLabel.get(label);
-          if (element && control.kind === "checkbox") {
+          if (element) {
             logSelectionTransition(
               "Selecting filter value",
               title,
               control.kind,
-              { ...setCheckbox(element as HTMLInputElement, true), label },
-              true
-            );
-          }
-          if (element && control.kind === "slicer") {
-            logSelectionTransition(
-              "Selecting filter value",
-              title,
-              control.kind,
-              { ...setSlicerOption(element as HTMLElement, true), label },
+              { ...setCheckbox(element, true), label },
               true
             );
           }
