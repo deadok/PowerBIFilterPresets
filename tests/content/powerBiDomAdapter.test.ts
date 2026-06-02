@@ -167,6 +167,145 @@ describe("createPowerBiDomAdapter", () => {
     ]);
   });
 
+  it("preserves already-materialized selected dropdown values before reading other slicers mutates popups", async () => {
+    document.body.innerHTML = `
+      <main>
+        <section class="visual customPadding visual-slicer">
+          <div class="slicer-container">
+            <h3 class="slicer-header-text" aria-label="Направление" title="Направление">Направление</h3>
+            <div class="slicer-content-wrapper">
+              <div class="slicer-dropdown-menu" role="combobox" aria-label="Направление">
+                <div class="slicer-restatement">All</div>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section class="visual customPadding visual-slicer">
+          <div class="slicer-container">
+            <h3 class="slicer-header-text" aria-label="Продукт" title="Продукт">Продукт</h3>
+            <div class="slicer-content-wrapper">
+              <div class="slicer-dropdown-menu" role="combobox" aria-label="Продукт">
+                <div class="slicer-restatement">Multiple selections</div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+      <div class="slicer-dropdown-popup visual themeableElement focused" data-popup-title="Продукт">
+        <div class="slicerBody" role="listbox" aria-label="Продукт">
+          <div class="slicerItemContainer" role="option" aria-selected="false" title="ЭТРН">
+            <div class="slicerCheckbox"></div>
+            <span class="slicerText">ЭТРН</span>
+          </div>
+          <div class="slicerItemContainer" role="option" aria-selected="true" title="Ядро персонализации">
+            <div class="slicerCheckbox selected"></div>
+            <span class="slicerText">Ядро персонализации</span>
+          </div>
+          <div class="slicerItemContainer" role="option" aria-selected="true" title="Яндекс Трекер">
+            <div class="slicerCheckbox selected"></div>
+            <span class="slicerText">Яндекс Трекер</span>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.querySelector<HTMLElement>('[role="combobox"][aria-label="Направление"]')?.addEventListener("click", () => {
+      document.querySelector(".slicer-dropdown-popup")?.remove();
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        `<div class="slicer-dropdown-popup visual themeableElement focused" data-popup-title="Направление">
+          <div class="slicerBody" role="listbox" aria-label="Направление">
+            <div class="slicerItemContainer" role="option" aria-selected="false" title="Data">
+              <div class="slicerCheckbox"></div>
+              <span class="slicerText">Data</span>
+            </div>
+          </div>
+        </div>`
+      );
+    });
+    document.querySelector<HTMLElement>('[role="combobox"][aria-label="Продукт"]')?.addEventListener("click", () => {
+      document.querySelector(".slicer-dropdown-popup")?.remove();
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        `<div class="slicer-dropdown-popup visual themeableElement focused" data-popup-title="Продукт">
+          <div class="slicerBody" role="listbox" aria-label="Продукт">
+            <div class="slicerItemContainer" role="option" aria-selected="false" title="Аналитика">
+              <div class="slicerCheckbox"></div>
+              <span class="slicerText">Аналитика</span>
+            </div>
+          </div>
+        </div>`
+      );
+    });
+
+    const adapter = createPowerBiDomAdapter(document);
+
+    await expect(adapter.readListFilters()).resolves.toEqual([
+      { title: "Направление", type: "list", selectedLabels: [] },
+      { title: "Продукт", type: "list", selectedLabels: ["Ядро персонализации", "Яндекс Трекер"] }
+    ]);
+  });
+
+  it("reopens generic multi-select dropdowns when a stale external listbox has no selected options", async () => {
+    document.body.innerHTML = `
+      <main>
+        <section class="visual customPadding visual-slicer">
+          <div class="slicer-container">
+            <h3 class="slicer-header-text" aria-label="Продукт" title="Продукт">Продукт</h3>
+            <div class="slicer-content-wrapper">
+              <div class="slicer-dropdown-menu" role="combobox" aria-label="Продукт">
+                <div class="slicer-restatement">Multiple selections</div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+      <div class="slicer-dropdown-popup visual themeableElement focused" data-popup-title="Продукт">
+        <div class="slicerBody" role="listbox" aria-label="Продукт">
+          <div class="slicerItemContainer" role="option" aria-selected="false" title="Аналитика">
+            <div class="slicerCheckbox"></div>
+            <span class="slicerText">Аналитика</span>
+          </div>
+          <div class="slicerItemContainer" role="option" aria-selected="false" title="Боты">
+            <div class="slicerCheckbox"></div>
+            <span class="slicerText">Боты</span>
+          </div>
+        </div>
+      </div>
+    `;
+    let productOpened = false;
+    document.querySelector<HTMLElement>('[role="combobox"][aria-label="Продукт"]')?.addEventListener("click", () => {
+      productOpened = true;
+      document.querySelector(".slicer-dropdown-popup")?.remove();
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        `<div class="slicer-dropdown-popup visual themeableElement focused" data-popup-title="Продукт">
+          <div class="slicerBody" role="listbox" aria-label="Продукт">
+            <div class="slicerItemContainer" role="option" aria-selected="false" title="ЭТРН">
+              <div class="slicerCheckbox"></div>
+              <span class="slicerText">ЭТРН</span>
+            </div>
+            <div class="slicerItemContainer" role="option" aria-selected="true" title="Ядро персонализации">
+              <div class="slicerCheckbox selected"></div>
+              <span class="slicerText">Ядро персонализации</span>
+            </div>
+            <div class="slicerItemContainer" role="option" aria-selected="true" title="Яндекс Трекер">
+              <div class="slicerCheckbox selected"></div>
+              <span class="slicerText">Яндекс Трекер</span>
+            </div>
+          </div>
+        </div>`
+      );
+    });
+
+    const adapter = createPowerBiDomAdapter(document);
+
+    await expect(adapter.readListFilters()).resolves.toEqual([
+      { title: "Продукт", type: "list", selectedLabels: ["Ядро персонализации", "Яндекс Трекер"] }
+    ]);
+    expect(productOpened).toBe(true);
+  });
+
   it("closes dropdown slicer popups opened while reading selected values", async () => {
     document.body.innerHTML = `
       <main>
@@ -259,6 +398,319 @@ describe("createPowerBiDomAdapter", () => {
     const adapter = createPowerBiDomAdapter(document);
 
     await expect(adapter.readListFilters()).resolves.toEqual([{ title: "Product", type: "list", selectedLabels: [] }]);
+    expect(document.querySelector(".slicer-dropdown-popup")).toBeNull();
+  });
+
+  it("reads selected values from virtualized dropdown slicers after scrolling", async () => {
+    document.body.innerHTML = `
+      <main>
+        <section class="visual customPadding visual-slicer">
+          <div class="slicer-container">
+            <h3 class="slicer-header-text" aria-label="Продукт" title="Продукт">Продукт</h3>
+            <div class="slicer-content-wrapper">
+              <div class="slicer-dropdown-menu" role="combobox" aria-label="Продукт">
+                <div class="slicer-restatement">All</div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    `;
+    const selectedTitles = new Set(["ГЕО и сервисы"]);
+    const labels = ["коммуникации", "обучение", "оповещения", "ГЕО и сервисы"];
+    const rowHeight = 20;
+    const visibleRows = 2;
+    const renderOption = (title: string) => `
+      <div class="slicerItemContainer" role="option" aria-selected="${selectedTitles.has(title)}" title="${title}">
+        <div class="slicerCheckbox${selectedTitles.has(title) ? " selected" : ""}"></div>
+        <span class="slicerText">${title}</span>
+      </div>`;
+    const visibleLabelsFor = (scrollTop: number) => {
+      const start = Math.min(labels.length - visibleRows, Math.floor(scrollTop / rowHeight));
+      return labels.slice(start, start + visibleRows);
+    };
+    const renderVisibleOptions = (listbox: HTMLElement) => {
+      listbox.innerHTML = visibleLabelsFor(listbox.scrollTop).map(renderOption).join("");
+    };
+    const attachVirtualScrollMetrics = (listbox: HTMLElement) => {
+      Object.defineProperty(listbox, "clientHeight", { configurable: true, value: rowHeight * visibleRows });
+      Object.defineProperty(listbox, "scrollHeight", { configurable: true, value: rowHeight * labels.length });
+    };
+    const closePopup = () => document.querySelector(".slicer-dropdown-popup")?.remove();
+    document.querySelector<HTMLElement>('[role="combobox"]')?.addEventListener("click", () => {
+      if (document.querySelector(".slicer-dropdown-popup")) {
+        closePopup();
+        return;
+      }
+
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        `<div class="slicer-dropdown-popup visual themeableElement focused">
+          <div class="slicerBody" role="listbox" aria-label="Продукт"></div>
+        </div>`
+      );
+      const listbox = document.querySelector<HTMLElement>('[role="listbox"][aria-label="Продукт"]');
+      expect(listbox).not.toBeNull();
+      attachVirtualScrollMetrics(listbox!);
+      listbox!.scrollTop = 0;
+      renderVisibleOptions(listbox!);
+      listbox!.addEventListener("scroll", () => renderVisibleOptions(listbox!));
+    });
+    addDocumentListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closePopup();
+      }
+    });
+    const adapter = createPowerBiDomAdapter(document);
+
+    await expect(adapter.readListFilters()).resolves.toEqual([
+      { title: "Продукт", type: "list", selectedLabels: ["ГЕО и сервисы"] }
+    ]);
+    expect(document.querySelector(".slicer-dropdown-popup")).toBeNull();
+  });
+
+  it("waits for delayed virtualized dropdown options while reading selected values", async () => {
+    document.body.innerHTML = `
+      <main>
+        <section class="visual customPadding visual-slicer">
+          <div class="slicer-container">
+            <h3 class="slicer-header-text" aria-label="Продукт" title="Продукт">Продукт</h3>
+            <div class="slicer-content-wrapper">
+              <div class="slicer-dropdown-menu" role="combobox" aria-label="Продукт">
+                <div class="slicer-restatement">All</div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    `;
+    const selectedTitles = new Set(["ГЕО и сервисы"]);
+    const labels = ["коммуникации", "обучение", "ГЕО и сервисы"];
+    const rowHeight = 20;
+    const visibleRows = 2;
+    const renderOption = (title: string) => `
+      <div class="slicerItemContainer" role="option" aria-selected="${selectedTitles.has(title)}" title="${title}">
+        <div class="slicerCheckbox${selectedTitles.has(title) ? " selected" : ""}"></div>
+        <span class="slicerText">${title}</span>
+      </div>`;
+    const visibleLabelsFor = (scrollTop: number) => {
+      const start = Math.min(labels.length - visibleRows, Math.floor(scrollTop / rowHeight));
+      return labels.slice(start, start + visibleRows);
+    };
+    const renderVisibleOptions = (listbox: HTMLElement) => {
+      listbox.innerHTML = visibleLabelsFor(listbox.scrollTop).map(renderOption).join("");
+    };
+    const attachVirtualScrollMetrics = (listbox: HTMLElement) => {
+      Object.defineProperty(listbox, "clientHeight", { configurable: true, value: rowHeight * visibleRows });
+      Object.defineProperty(listbox, "scrollHeight", { configurable: true, value: rowHeight * labels.length });
+    };
+    const closePopup = () => document.querySelector(".slicer-dropdown-popup")?.remove();
+    document.querySelector<HTMLElement>('[role="combobox"]')?.addEventListener("click", () => {
+      if (document.querySelector(".slicer-dropdown-popup")) {
+        closePopup();
+        return;
+      }
+
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        `<div class="slicer-dropdown-popup visual themeableElement focused">
+          <div class="slicerBody" role="listbox" aria-label="Продукт"></div>
+        </div>`
+      );
+      const listbox = document.querySelector<HTMLElement>('[role="listbox"][aria-label="Продукт"]');
+      expect(listbox).not.toBeNull();
+      attachVirtualScrollMetrics(listbox!);
+      listbox!.scrollTop = 0;
+      renderVisibleOptions(listbox!);
+      listbox!.addEventListener("scroll", () => {
+        setTestTimeout(() => renderVisibleOptions(listbox!), 75);
+      });
+    });
+    addDocumentListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closePopup();
+      }
+    });
+    const adapter = createPowerBiDomAdapter(document);
+
+    await expect(adapter.readListFilters()).resolves.toEqual([
+      { title: "Продукт", type: "list", selectedLabels: ["ГЕО и сервисы"] }
+    ]);
+    expect(document.querySelector(".slicer-dropdown-popup")).toBeNull();
+  });
+
+  it("uses wheel scanning when virtualized dropdowns do not expose scroll metrics", async () => {
+    document.body.innerHTML = `
+      <main>
+        <section class="visual customPadding visual-slicer">
+          <div class="slicer-container">
+            <h3 class="slicer-header-text" aria-label="Продукт" title="Продукт">Продукт</h3>
+            <div class="slicer-content-wrapper">
+              <div class="slicer-dropdown-menu" role="combobox" aria-label="Продукт">
+                <div class="slicer-restatement">Multiple selections</div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    `;
+    const selectedTitles = new Set(["Ядро персонализации", "Яндекс Трекер"]);
+    const slices = [
+      ["Select all", "(Blank)", "коммуникации", "обучение", "оповещения", "рейтинг", "Ally", "AuditorTG"],
+      ["OAuth Interaction", "Platform", "PLC", "Power BI", "ReviewBot", "Rules", "Tealpos", "WEB интерфейс"],
+      [
+        "Учет ТМЦ",
+        "Фискализация",
+        "Ценообразование",
+        "ЭТРН",
+        "Ядро персонализации",
+        "Яндекс Трекер",
+        "Яндекс.Еда",
+        "Яндекс.Лавка"
+      ]
+    ];
+    let sliceIndex = 0;
+    const renderOption = (title: string) => `
+      <div class="slicerItemContainer" role="option" aria-selected="${selectedTitles.has(title)}" title="${title}">
+        <div class="slicerCheckbox${selectedTitles.has(title) ? " selected" : ""}"></div>
+        <span class="slicerText">${title}</span>
+      </div>`;
+    const renderVisibleOptions = (listbox: HTMLElement) => {
+      listbox.innerHTML = slices[sliceIndex].map(renderOption).join("");
+    };
+    const closePopup = () => document.querySelector(".slicer-dropdown-popup")?.remove();
+    document.querySelector<HTMLElement>('[role="combobox"]')?.addEventListener("click", () => {
+      if (document.querySelector(".slicer-dropdown-popup")) {
+        closePopup();
+        return;
+      }
+
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        `<div class="slicer-dropdown-popup visual themeableElement focused">
+          <div class="slicerBody" role="listbox" aria-label="Продукт"></div>
+        </div>`
+      );
+      const listbox = document.querySelector<HTMLElement>('[role="listbox"][aria-label="Продукт"]');
+      expect(listbox).not.toBeNull();
+      renderVisibleOptions(listbox!);
+      listbox!.addEventListener("wheel", (event) => {
+        if (event.deltaY > 0 && sliceIndex < slices.length - 1) {
+          sliceIndex += 1;
+          setTestTimeout(() => renderVisibleOptions(listbox!), 75);
+        }
+      });
+    });
+    addDocumentListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closePopup();
+      }
+    });
+    const adapter = createPowerBiDomAdapter(document);
+
+    await expect(adapter.readListFilters()).resolves.toEqual([
+      { title: "Продукт", type: "list", selectedLabels: ["Ядро персонализации", "Яндекс Трекер"] }
+    ]);
+    expect(document.querySelector(".slicer-dropdown-popup")).toBeNull();
+  });
+
+  it("falls back to the combobox summary text when a closed virtualized dropdown hides the selected option", async () => {
+    document.body.innerHTML = `
+      <main>
+        <section class="visual customPadding visual-slicer">
+          <div class="slicer-container">
+            <h3 class="slicer-header-text" aria-label="Продукт" title="Продукт">Продукт</h3>
+            <div class="slicer-content-wrapper">
+              <div class="slicer-dropdown-menu" role="combobox" aria-label="Продукт">
+                <div class="slicer-restatement">ГЕО и сервисы</div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    `;
+    const closePopup = () => document.querySelector(".slicer-dropdown-popup")?.remove();
+    document.querySelector<HTMLElement>('[role="combobox"]')?.addEventListener("click", () => {
+      if (document.querySelector(".slicer-dropdown-popup")) {
+        closePopup();
+        return;
+      }
+
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        `<div class="slicer-dropdown-popup visual themeableElement focused">
+          <div class="slicerBody" role="listbox" aria-label="Продукт">
+            <div class="slicerItemContainer" role="option" aria-selected="false" title="коммуникации">
+              <div class="slicerCheckbox"></div>
+              <span class="slicerText">коммуникации</span>
+            </div>
+            <div class="slicerItemContainer" role="option" aria-selected="false" title="обучение">
+              <div class="slicerCheckbox"></div>
+              <span class="slicerText">обучение</span>
+            </div>
+          </div>
+        </div>`
+      );
+    });
+    addDocumentListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closePopup();
+      }
+    });
+    const adapter = createPowerBiDomAdapter(document);
+
+    await expect(adapter.readListFilters()).resolves.toEqual([
+      { title: "Продукт", type: "list", selectedLabels: ["ГЕО и сервисы"] }
+    ]);
+    expect(document.querySelector(".slicer-dropdown-popup")).toBeNull();
+  });
+
+  it("does not treat generic multi-select combobox summaries as saved labels", async () => {
+    document.body.innerHTML = `
+      <main>
+        <section class="visual customPadding visual-slicer">
+          <div class="slicer-container">
+            <h3 class="slicer-header-text" aria-label="Продукт" title="Продукт">Продукт</h3>
+            <div class="slicer-content-wrapper">
+              <div class="slicer-dropdown-menu" role="combobox" aria-label="Продукт">
+                <div class="slicer-restatement">Multiple selections</div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    `;
+    const closePopup = () => document.querySelector(".slicer-dropdown-popup")?.remove();
+    document.querySelector<HTMLElement>('[role="combobox"]')?.addEventListener("click", () => {
+      if (document.querySelector(".slicer-dropdown-popup")) {
+        closePopup();
+        return;
+      }
+
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        `<div class="slicer-dropdown-popup visual themeableElement focused">
+          <div class="slicerBody" role="listbox" aria-label="Продукт">
+            <div class="slicerItemContainer" role="option" aria-selected="false" title="коммуникации">
+              <div class="slicerCheckbox"></div>
+              <span class="slicerText">коммуникации</span>
+            </div>
+            <div class="slicerItemContainer" role="option" aria-selected="false" title="обучение">
+              <div class="slicerCheckbox"></div>
+              <span class="slicerText">обучение</span>
+            </div>
+          </div>
+        </div>`
+      );
+    });
+    addDocumentListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closePopup();
+      }
+    });
+    const adapter = createPowerBiDomAdapter(document);
+
+    await expect(adapter.readListFilters()).resolves.toEqual([{ title: "Продукт", type: "list", selectedLabels: [] }]);
     expect(document.querySelector(".slicer-dropdown-popup")).toBeNull();
   });
 

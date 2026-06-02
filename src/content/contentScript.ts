@@ -49,9 +49,27 @@ export function installDebugPresetHook(
     });
   });
 
+  targetWindow.addEventListener("PowerBIFilterPresets:readFilters", (event) => {
+    const requestId = (event as CustomEvent<{ requestId?: string }>).detail?.requestId;
+    void requestHandler({ type: "READ_FILTERS" })
+      .then((response) => {
+        targetWindow.dispatchEvent(
+          new CustomEvent("PowerBIFilterPresets:readFiltersResult", { detail: { requestId, response } })
+        );
+      })
+      .catch((error: unknown) => {
+        targetWindow.dispatchEvent(
+          new CustomEvent("PowerBIFilterPresets:readFiltersResult", {
+            detail: { requestId, error: error instanceof Error ? error.message : "Unknown read filters error." }
+          })
+        );
+      });
+  });
+
   Object.assign(targetWindow, {
     PowerBIFilterPresets: {
-      applyPreset: (detail: unknown) => applyDebugPreset(detail, requestHandler)
+      applyPreset: (detail: unknown) => applyDebugPreset(detail, requestHandler),
+      readFilters: () => requestHandler({ type: "READ_FILTERS" })
     }
   });
 }

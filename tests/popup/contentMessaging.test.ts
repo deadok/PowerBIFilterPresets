@@ -35,4 +35,39 @@ describe("sendContentRequestToActiveTab", () => {
     });
     expect(sendMessage).toHaveBeenCalledTimes(2);
   });
+
+  it("uses main-world Power BI slicer state when DOM capture misses virtualized selections", async () => {
+    const sendMessage = vi.fn().mockImplementation((_tabId, _request, _options, callback: (response?: ContentResponse) => void) => {
+      callback({ ok: true, filters: [{ title: "Продукт", type: "list", selectedLabels: [] }] });
+    });
+    const executeScript = vi.fn().mockResolvedValue([
+      {
+        frameId: 7,
+        result: [{ title: "Продукт", type: "list", selectedLabels: ["Ядро персонализации", "Яндекс Трекер"] }]
+      }
+    ]);
+
+    await expect(
+      sendContentRequestToActiveTab(readFiltersRequest, {
+        getActiveTab: async () => ({ id: 42, url: "https://portal.example/report" }),
+        findBestFrameForFilters: async () => 7,
+        sendMessage,
+        executeScript,
+        getLastError: () => undefined,
+        contentScriptFile: "assets/contentScript.js"
+      })
+    ).resolves.toEqual({
+      ok: true,
+      filters: [
+        { title: "Продукт", type: "list", selectedLabels: ["Ядро персонализации", "Яндекс Трекер"] }
+      ]
+    });
+
+    expect(executeScript).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: { tabId: 42, frameIds: [7] },
+        world: "MAIN"
+      })
+    );
+  });
 });

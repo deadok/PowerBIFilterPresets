@@ -38,4 +38,39 @@ describe("applyDebugPreset", () => {
     target.dispatchEvent(new CustomEvent("PowerBIFilterPresets:applyPreset", { detail: samplePreset }));
     await vi.waitFor(() => expect(handleRequest).toHaveBeenCalledWith({ type: "APPLY_FILTERS", filters }));
   });
+
+  it("installs a debug hook for reading filters through the request handler", async () => {
+    const response: ContentResponse = { ok: true, filters };
+    const handleRequest = vi.fn().mockResolvedValue(response);
+    const target = new EventTarget() as Window;
+
+    installDebugPresetHook(target, handleRequest);
+
+    const debugWindow = target as Window & {
+      PowerBIFilterPresets: { readFilters: () => Promise<ContentResponse> };
+    };
+
+    await expect(debugWindow.PowerBIFilterPresets.readFilters()).resolves.toBe(response);
+    expect(handleRequest).toHaveBeenCalledWith({ type: "READ_FILTERS" });
+  });
+
+  it("installs a CustomEvent debug hook for reading filters from page DevTools", async () => {
+    const response: ContentResponse = { ok: true, filters };
+    const handleRequest = vi.fn().mockResolvedValue(response);
+    const target = new EventTarget() as Window;
+    const result = new Promise<CustomEvent<{ requestId: string; response: ContentResponse }>>((resolve) => {
+      target.addEventListener("PowerBIFilterPresets:readFiltersResult", (event) => resolve(event as CustomEvent));
+    });
+
+    installDebugPresetHook(target, handleRequest);
+    target.dispatchEvent(new CustomEvent("PowerBIFilterPresets:readFilters", { detail: { requestId: "read-1" } }));
+
+    await expect(result).resolves.toMatchObject({
+      detail: {
+        requestId: "read-1",
+        response
+      }
+    });
+    expect(handleRequest).toHaveBeenCalledWith({ type: "READ_FILTERS" });
+  });
 });

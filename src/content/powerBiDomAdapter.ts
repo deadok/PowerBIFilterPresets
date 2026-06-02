@@ -43,12 +43,18 @@ type SlicerListboxSnapshot = {
 type ScrollPlan = {
   completed: boolean;
   positions: number[];
+  wheelFallback: boolean;
 };
 
 const DROPDOWN_OPTIONS_TIMEOUT_MS = 500;
 const DROPDOWN_OPTIONS_INTERVAL_MS = 25;
 const SLICER_SELECTION_VERIFY_TIMEOUT_MS = 250;
+const SLICER_SCROLL_RENDER_TIMEOUT_MS = 200;
 const SLICER_SCAN_MAX_SCROLL_STEPS = 160;
+const SLICER_WHEEL_SCAN_DELTA_Y = 500;
+const SLICER_WHEEL_SCAN_MAX_STEPS = 40;
+const SLICER_WHEEL_SCAN_MIN_OPTIONS = 8;
+const SLICER_WHEEL_SCAN_STABLE_STEPS = 3;
 const LOG_PREFIX = "[Power BI Presets]";
 
 function delay(ms: number): Promise<void> {
@@ -172,20 +178,21 @@ async function resolveSlicerOptions(
     closeAfterRead?: boolean;
     dropdownOptionsIntervalMs?: number;
     dropdownOptionsTimeoutMs?: number;
+    forceOpenDropdown?: boolean;
     onOpened?: (combobox: HTMLElement) => void;
     onResolvedExternalOptions?: (optionCount: number) => void;
     onWaitingForExternalOptions?: (timeoutMs: number, intervalMs: number) => void;
   } = {}
 ): Promise<HTMLElement[]> {
   const inlineOptions = slicerOptions(control);
-  if (inlineOptions.length > 0) {
+  if (!options.forceOpenDropdown && inlineOptions.length > 0) {
     return inlineOptions;
   }
 
   const dropdownDocument = control.element.ownerDocument;
   const dropdownRoots = [root, dropdownDocument];
   const existingExternalOptions = externalSlicerOptions(dropdownRoots, control.title);
-  if (existingExternalOptions.length > 0) {
+  if (!options.forceOpenDropdown && existingExternalOptions.length > 0) {
     return existingExternalOptions;
   }
 
@@ -225,12 +232,60 @@ function labelForSlicerOption(option: HTMLElement): string {
   );
 }
 
+function selectedLabelsFromComboboxSummary(control: SlicerControl): string[] {
+  const combobox = control.element.querySelector<HTMLElement>('[role="combobox"]');
+  const restatement = combobox ? combobox.querySelector(".slicer-restatement") : null;
+  const summary = textOf(restatement) || textOf(combobox);
+  const normalized = summary.trim();
+  const genericSummaryPatterns = [/^all$/i, /multiple/i, /selected/i, /выбран/i, /значени/i, /элемент/i];
+
+  if (
+    normalized.length === 0 ||
+    normalized.includes(",") ||
+    normalized.includes(";") ||
+    genericSummaryPatterns.some((pattern) => pattern.test(normalized))
+  ) {
+    return [];
+  }
+
+  return [normalized];
+}
+
+function hasGenericMultiSelectSummary(control: SlicerControl): boolean {
+  const combobox = control.element.querySelector<HTMLElement>('[role="combobox"]');
+  const restatement = combobox ? combobox.querySelector(".slicer-restatement") : null;
+  const summary = textOf(restatement) || textOf(combobox);
+
+  return /multiple/i.test(summary) || /выбран/i.test(summary) || /значени/i.test(summary) || /элемент/i.test(summary);
+}
+
 function isSlicerOptionSelected(option: HTMLElement): boolean {
   return (
     option.getAttribute("aria-selected") === "true" ||
     option.classList.contains("selected") ||
     option.querySelector(".slicerCheckbox.selected, .selected") !== null
   );
+}
+
+function selectedLabelsFromSlicerOptions(options: HTMLElement[]): string[] {
+  const selectedLabels: string[] = [];
+  const seenLabels = new Set<string>();
+
+  for (const option of options) {
+    if (!isSlicerOptionSelected(option)) {
+      continue;
+    }
+
+    const label = labelForSlicerOption(option);
+    if (label.length === 0 || label === "Select all" || seenLabels.has(label)) {
+      continue;
+    }
+
+    seenLabels.add(label);
+    selectedLabels.push(label);
+  }
+
+  return selectedLabels;
 }
 
 function matchingControls(root: ParentNode, title: string): ListControl[] {
@@ -337,6 +392,24 @@ function optionsInListbox(listbox: HTMLElement): HTMLElement[] {
   return Array.from(listbox.querySelectorAll<HTMLElement>('[role="option"]'));
 }
 
+function optionsSignature(options: HTMLElement[]): string {
+  return options
+    .filter((option) => option.isConnected)
+    .map((option) =>
+      [
+        labelForSlicerOption(option),
+        option.getAttribute("aria-selected") ?? "",
+        option.getAttribute("class") ?? "",
+        option.querySelector(".slicerCheckbox")?.getAttribute("class") ?? ""
+      ].join(":")
+    )
+    .join("|");
+}
+
+function listboxSnapshotsSignature(snapshots: SlicerListboxSnapshot[]): string {
+  return snapshots.map((snapshot) => optionsSignature(snapshot.options)).join("\n");
+}
+
 function liveSlicerListboxes(root: ParentNode, control: SlicerControl, title: string): HTMLElement[] {
   const listboxes: HTMLElement[] = [];
   const seen = new Set<HTMLElement>();
@@ -393,7 +466,7 @@ function scrollElementForListbox(listbox: HTMLElement): HTMLElement {
 function scrollPlanForElement(element: HTMLElement): ScrollPlan {
   const maxScrollTop = Math.max(0, element.scrollHeight - element.clientHeight);
   if (maxScrollTop === 0 || element.clientHeight <= 0) {
-    return { completed: true, positions: [element.scrollTop] };
+    return { completed: true, positions: [element.scrollTop], wheelFallback: true };
   }
 
   const step = Math.max(1, Math.floor(element.clientHeight * 0.8));
@@ -405,10 +478,10 @@ function scrollPlanForElement(element: HTMLElement): ScrollPlan {
 
   const sortedPositions = Array.from(positions).sort((left, right) => left - right);
   if (sortedPositions.length <= SLICER_SCAN_MAX_SCROLL_STEPS) {
-    return { completed: true, positions: sortedPositions };
+    return { completed: true, positions: sortedPositions, wheelFallback: false };
   }
 
-  return { completed: false, positions: sortedPositions.slice(0, SLICER_SCAN_MAX_SCROLL_STEPS) };
+  return { completed: false, positions: sortedPositions.slice(0, SLICER_SCAN_MAX_SCROLL_STEPS), wheelFallback: false };
 }
 
 function dispatchWheel(element: HTMLElement, deltaY: number): void {
@@ -420,7 +493,7 @@ function dispatchWheel(element: HTMLElement, deltaY: number): void {
   element.dispatchEvent(event);
 }
 
-function scrollSlicerElement(scrollElement: HTMLElement, listbox: HTMLElement, scrollTop: number): void {
+function scrollSlicerElement(scrollElement: HTMLElement, listbox: HTMLElement, scrollTop: number): boolean {
   const deltaY = scrollTop - scrollElement.scrollTop;
   dispatchWheel(listbox, deltaY);
   if (listbox !== scrollElement) {
@@ -433,6 +506,68 @@ function scrollSlicerElement(scrollElement: HTMLElement, listbox: HTMLElement, s
 
   scrollElement.scrollTop = scrollTop;
   scrollElement.dispatchEvent(new Event("scroll", { bubbles: true }));
+
+  return deltaY !== 0;
+}
+
+async function waitForSlicerScrollRender(
+  root: ParentNode,
+  control: SlicerControl,
+  title: string,
+  previousSignature: string,
+  intervalMs: number
+): Promise<void> {
+  const deadline = Date.now() + SLICER_SCROLL_RENDER_TIMEOUT_MS;
+
+  while (Date.now() <= deadline) {
+    await delay(intervalMs);
+
+    const liveSnapshots = slicerListboxSnapshots(root, control, title);
+    const liveSignature = listboxSnapshotsSignature(liveSnapshots);
+    if (liveSignature.length > 0 && liveSignature !== previousSignature) {
+      return;
+    }
+  }
+}
+
+async function scanSlicerOptionsByWheel(
+  root: ParentNode,
+  control: SlicerControl,
+  title: string,
+  onOptions: (options: HTMLElement[]) => void | Promise<void>,
+  intervalMs: number
+): Promise<void> {
+  let stableSteps = 0;
+  let previousSignature = listboxSnapshotsSignature(slicerListboxSnapshots(root, control, title));
+
+  for (let step = 0; step < SLICER_WHEEL_SCAN_MAX_STEPS && stableSteps < SLICER_WHEEL_SCAN_STABLE_STEPS; step += 1) {
+    const snapshotsBeforeWheel = slicerListboxSnapshots(root, control, title);
+    if (snapshotsBeforeWheel.length === 0) {
+      return;
+    }
+
+    for (const snapshot of snapshotsBeforeWheel) {
+      dispatchWheel(snapshot.listbox, SLICER_WHEEL_SCAN_DELTA_Y);
+      if (snapshot.scrollElement !== snapshot.listbox) {
+        dispatchWheel(snapshot.scrollElement, SLICER_WHEEL_SCAN_DELTA_Y);
+      }
+    }
+
+    await waitForSlicerScrollRender(root, control, title, previousSignature, intervalMs);
+
+    const liveSnapshots = slicerListboxSnapshots(root, control, title);
+    const liveSignature = listboxSnapshotsSignature(liveSnapshots);
+    if (liveSignature === previousSignature) {
+      stableSteps += 1;
+    } else {
+      stableSteps = 0;
+      previousSignature = liveSignature;
+    }
+
+    for (const snapshot of liveSnapshots) {
+      await onOptions(snapshot.options.filter((option) => option.isConnected));
+    }
+  }
 }
 
 async function scanSlicerOptions(
@@ -463,9 +598,16 @@ async function scanSlicerOptions(
     for (const scrollTop of scrollPlan.positions) {
       const snapshotsBeforeScroll = slicerListboxSnapshots(root, control, title);
       const snapshots = snapshotsBeforeScroll.length > 0 ? snapshotsBeforeScroll : [initialSnapshot];
+      const signatureBeforeScroll = listboxSnapshotsSignature(snapshots);
+      let scrolled = false;
 
       for (const snapshot of snapshots) {
-        scrollSlicerElement(snapshot.scrollElement, snapshot.listbox, scrollTop);
+        scrolled = scrollSlicerElement(snapshot.scrollElement, snapshot.listbox, scrollTop) || scrolled;
+      }
+
+      if (scrolled) {
+        await waitForSlicerScrollRender(root, control, title, signatureBeforeScroll, intervalMs);
+      } else {
         await delay(intervalMs);
       }
 
@@ -474,6 +616,10 @@ async function scanSlicerOptions(
       for (const snapshot of snapshotsAfterScroll) {
         await onOptions(snapshot.options.filter((option) => option.isConnected));
       }
+    }
+
+    if (scrollPlan.wheelFallback && initialSnapshot.options.length >= SLICER_WHEEL_SCAN_MIN_OPTIONS) {
+      await scanSlicerOptionsByWheel(root, control, title, onOptions, intervalMs);
     }
   }
 
@@ -563,12 +709,67 @@ async function selectedLabelsForControl(root: ParentNode, control: ListControl):
       .filter(Boolean);
   }
 
-  const options = await resolveSlicerOptions(root, control, { closeAfterRead: true });
+  let openedCombobox: HTMLElement | null = null;
 
-  return options
-    .filter(isSlicerOptionSelected)
-    .map(labelForSlicerOption)
-    .filter((label) => label.length > 0 && label !== "Select all");
+  try {
+    const readSelectedLabels = async (forceOpenDropdown = false): Promise<string[]> => {
+      const options = await resolveSlicerOptions(root, control, {
+        forceOpenDropdown,
+        onOpened: (combobox) => {
+          openedCombobox = combobox;
+        }
+      });
+      const selectedLabels: string[] = [];
+
+      await scanSlicerOptions(root, control, control.title, options, (currentOptions) => {
+        selectedLabels.push(
+          ...selectedLabelsFromSlicerOptions(currentOptions).filter((label) => !selectedLabels.includes(label))
+        );
+      });
+
+      return selectedLabels;
+    };
+
+    const selectedLabels = await readSelectedLabels();
+    if (selectedLabels.length > 0) {
+      return selectedLabels;
+    }
+
+    if (hasGenericMultiSelectSummary(control)) {
+      const reopenedSelectedLabels = await readSelectedLabels(true);
+      if (reopenedSelectedLabels.length > 0) {
+        return reopenedSelectedLabels;
+      }
+    }
+
+    return selectedLabelsFromComboboxSummary(control);
+  } finally {
+    if (openedCombobox) {
+      await closeDropdownOpenedForRead(openedCombobox);
+    }
+  }
+}
+
+function initiallyMaterializedSlicerSelections(root: ParentNode, controls: ListControl[]): Map<string, string[]> {
+  const selectionsByTitle = new Map<string, string[]>();
+
+  for (const control of controls) {
+    if (control.kind !== "slicer") {
+      continue;
+    }
+
+    const labels = selectedLabelsFromSlicerOptions(
+      liveSlicerListboxes(root, control, control.title).flatMap((listbox) => optionsInListbox(listbox))
+    );
+    if (labels.length === 0) {
+      continue;
+    }
+
+    const existingLabels = selectionsByTitle.get(control.title) ?? [];
+    selectionsByTitle.set(control.title, Array.from(new Set([...existingLabels, ...labels])));
+  }
+
+  return selectionsByTitle;
 }
 
 export function createPowerBiDomAdapter(root: ParentNode = document): PowerBiDomAdapter {
@@ -590,12 +791,20 @@ export function createPowerBiDomAdapter(root: ParentNode = document): PowerBiDom
 
     async readListFilters() {
       const filters: FilterPresetItem[] = [];
+      const controls = listFilterControls(root);
+      const initialSlicerSelections = initiallyMaterializedSlicerSelections(root, controls);
 
-      for (const control of listFilterControls(root)) {
+      for (const control of controls) {
+        const capturedLabels = await selectedLabelsForControl(root, control);
+        const selectedLabels =
+          control.kind === "slicer" && capturedLabels.length === 0
+            ? initialSlicerSelections.get(control.title) ?? capturedLabels
+            : capturedLabels;
+
         filters.push({
           title: control.title,
           type: "list" as const,
-          selectedLabels: await selectedLabelsForControl(root, control)
+          selectedLabels
         });
       }
 
