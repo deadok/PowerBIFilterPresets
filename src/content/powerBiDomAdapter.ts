@@ -175,7 +175,6 @@ async function resolveSlicerOptions(
   root: ParentNode,
   control: SlicerControl,
   options: {
-    closeAfterRead?: boolean;
     dropdownOptionsIntervalMs?: number;
     dropdownOptionsTimeoutMs?: number;
     forceOpenDropdown?: boolean;
@@ -215,10 +214,6 @@ async function resolveSlicerOptions(
   }
 
   options.onResolvedExternalOptions?.(externalOptions.length);
-
-  if (options.closeAfterRead) {
-    await closeDropdownOpenedForRead(combobox);
-  }
 
   return externalOptions;
 }
