@@ -46,7 +46,8 @@ type ScrollPlan = {
   wheelFallback: boolean;
 };
 
-const DROPDOWN_OPTIONS_TIMEOUT_MS = 500;
+const DROPDOWN_OPTIONS_TIMEOUT_MS = 1500;
+const APPLY_DROPDOWN_OPTIONS_TIMEOUT_MS = 5000;
 const DROPDOWN_OPTIONS_INTERVAL_MS = 25;
 const SLICER_SELECTION_VERIFY_TIMEOUT_MS = 250;
 const SLICER_SCROLL_RENDER_TIMEOUT_MS = 200;
@@ -55,6 +56,8 @@ const SLICER_WHEEL_SCAN_DELTA_Y = 500;
 const SLICER_WHEEL_SCAN_MAX_STEPS = 40;
 const SLICER_WHEEL_SCAN_MIN_OPTIONS = 8;
 const SLICER_WHEEL_SCAN_STABLE_STEPS = 3;
+const SLICER_SCROLLBAR_DRAG_MAX_STEPS = 30;
+const SLICER_SCROLLBAR_DRAG_STABLE_STEPS = 3;
 const LOG_PREFIX = "[Power BI Presets]";
 
 function delay(ms: number): Promise<void> {
@@ -63,6 +66,74 @@ function delay(ms: number): Promise<void> {
 
 function textOf(element: Element | null): string {
   return element?.textContent?.trim().replace(/\s+/g, " ") ?? "";
+}
+
+function dispatchMouseEvent(element: HTMLElement, type: string): boolean {
+  const EventConstructor =
+    type.startsWith("pointer") && typeof element.ownerDocument.defaultView?.PointerEvent === "function"
+      ? element.ownerDocument.defaultView.PointerEvent
+      : element.ownerDocument.defaultView?.MouseEvent;
+  if (typeof EventConstructor === "function") {
+    element.dispatchEvent(new EventConstructor(type, { bubbles: true, cancelable: true }));
+    return true;
+  }
+
+  if (typeof element.ownerDocument.createEvent !== "function") {
+    return false;
+  }
+
+  const event = element.ownerDocument.createEvent("MouseEvents");
+  event.initMouseEvent(
+    type,
+    true,
+    true,
+    element.ownerDocument.defaultView ?? window,
+    0,
+    0,
+    0,
+    0,
+    0,
+    false,
+    false,
+    false,
+    false,
+    0,
+    null
+  );
+  element.dispatchEvent(event);
+  return true;
+}
+
+function dispatchKeyboardEvent(document: Document, type: string, key: string): void {
+  const EventConstructor = document.defaultView?.KeyboardEvent;
+  if (typeof EventConstructor === "function") {
+    document.dispatchEvent(new EventConstructor(type, { key, bubbles: true, cancelable: true }));
+    return;
+  }
+
+  const event = document.createEvent("Events");
+  event.initEvent(type, true, true);
+  Object.defineProperty(event, "key", { configurable: true, value: key });
+  document.dispatchEvent(event);
+}
+
+function activateElement(element: HTMLElement, options: { preferMouseEvents?: boolean } = {}): void {
+  if (!options.preferMouseEvents && typeof element.click === "function") {
+    element.click();
+    return;
+  }
+
+  const dispatched = [
+    dispatchMouseEvent(element, "pointerdown"),
+    dispatchMouseEvent(element, "mousedown"),
+    dispatchMouseEvent(element, "pointerup"),
+    dispatchMouseEvent(element, "mouseup"),
+    dispatchMouseEvent(element, "click")
+  ].some(Boolean);
+
+  if (!dispatched && typeof element.click === "function") {
+    element.click();
+  }
 }
 
 function checkboxFilterCards(root: ParentNode): CheckboxControl[] {
@@ -142,7 +213,7 @@ function externalSlicerListboxes(roots: ParentNode | ParentNode[], title: string
   for (const root of Array.isArray(roots) ? roots : [roots]) {
     const matchingListboxes = Array.from(root.querySelectorAll<HTMLElement>('[role="listbox"]')).filter((listbox) => {
       const label = listbox.getAttribute("aria-label")?.trim();
-      return label === title && listbox.isConnected && !listbox.closest(".slicer-container");
+      return label === title && listbox.isConnected && !listbox.closest(".slicer-container") && isExternalSlicerDropdownListbox(listbox);
     });
 
     for (const listbox of matchingListboxes) {
@@ -156,14 +227,28 @@ function externalSlicerListboxes(roots: ParentNode | ParentNode[], title: string
   return listboxes;
 }
 
+function isExternalSlicerDropdownListbox(listbox: HTMLElement): boolean {
+  return (
+    listbox.classList.contains("slicerBody") ||
+    listbox.closest(".slicerContainer, .slicer-dropdown-popup, .slicer-dropdown-popup-container") !== null
+  );
+}
+
+function hasSlicerValueOption(options: HTMLElement[]): boolean {
+  return options.some((option) => {
+    const label = labelForSlicerOption(option);
+    return label.length > 0 && label !== "Select all";
+  });
+}
+
 async function closeDropdownOpenedForRead(combobox: HTMLElement, options: { title?: string } = {}): Promise<void> {
   if (options.title) {
     console.debug(LOG_PREFIX, "Closing dropdown", { title: options.title, key: "Escape" });
   }
-  combobox.click();
+  activateElement(combobox, { preferMouseEvents: true });
   await delay(0);
 
-  combobox.ownerDocument.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  dispatchKeyboardEvent(combobox.ownerDocument, "keydown", "Escape");
   await delay(0);
 
   if (options.title) {
@@ -191,7 +276,7 @@ async function resolveSlicerOptions(
   const dropdownDocument = control.element.ownerDocument;
   const dropdownRoots = [root, dropdownDocument];
   const existingExternalOptions = externalSlicerOptions(dropdownRoots, control.title);
-  if (!options.forceOpenDropdown && existingExternalOptions.length > 0) {
+  if (!options.forceOpenDropdown && existingExternalOptions.length > 0 && hasSlicerValueOption(existingExternalOptions)) {
     return existingExternalOptions;
   }
 
@@ -200,7 +285,7 @@ async function resolveSlicerOptions(
     return [];
   }
 
-  combobox.click();
+  activateElement(combobox, { preferMouseEvents: true });
   options.onOpened?.(combobox);
   const timeoutMs = options.dropdownOptionsTimeoutMs ?? DROPDOWN_OPTIONS_TIMEOUT_MS;
   const intervalMs = options.dropdownOptionsIntervalMs ?? DROPDOWN_OPTIONS_INTERVAL_MS;
@@ -208,7 +293,7 @@ async function resolveSlicerOptions(
   let externalOptions = externalSlicerOptions(dropdownRoots, control.title);
   options.onWaitingForExternalOptions?.(timeoutMs, intervalMs);
 
-  while (externalOptions.length === 0 && Date.now() <= deadline) {
+  while (!hasSlicerValueOption(externalOptions) && Date.now() <= deadline) {
     await delay(intervalMs);
     externalOptions = externalSlicerOptions(dropdownRoots, control.title);
   }
@@ -252,6 +337,14 @@ function hasGenericMultiSelectSummary(control: SlicerControl): boolean {
   const summary = textOf(restatement) || textOf(combobox);
 
   return /multiple/i.test(summary) || /выбран/i.test(summary) || /значени/i.test(summary) || /элемент/i.test(summary);
+}
+
+function hasAllComboboxSummary(control: SlicerControl): boolean {
+  const combobox = control.element.querySelector<HTMLElement>('[role="combobox"]');
+  const restatement = combobox ? combobox.querySelector(".slicer-restatement") : null;
+  const summary = textOf(restatement) || textOf(combobox);
+
+  return /^all$/i.test(summary.trim());
 }
 
 function isSlicerOptionSelected(option: HTMLElement): boolean {
@@ -319,7 +412,7 @@ function setCheckbox(checkbox: HTMLInputElement, checked: boolean): SelectionTra
   const clickAttempted = beforeSelected !== checked;
 
   if (clickAttempted) {
-    checkbox.click();
+    activateElement(checkbox);
   }
 
   checkbox.checked = checked;
@@ -344,7 +437,7 @@ async function setSlicerOption(
   const clickAttempted = beforeSelected !== selected;
 
   if (clickAttempted) {
-    liveOption.click();
+    activateElement(liveOption);
   }
 
   const deadline = Date.now() + SLICER_SELECTION_VERIFY_TIMEOUT_MS;
@@ -488,6 +581,111 @@ function dispatchWheel(element: HTMLElement, deltaY: number): void {
   element.dispatchEvent(event);
 }
 
+function dispatchMouseDragEvent(
+  target: EventTarget,
+  document: Document,
+  type: "mousedown" | "mousemove" | "mouseup",
+  clientX: number,
+  clientY: number
+): void {
+  const EventConstructor = document.defaultView?.MouseEvent;
+  const buttons = type === "mouseup" ? 0 : 1;
+  const event =
+    typeof EventConstructor === "function"
+      ? new EventConstructor(type, {
+          bubbles: true,
+          cancelable: true,
+          button: 0,
+          buttons,
+          clientX,
+          clientY,
+          screenX: clientX,
+          screenY: clientY
+        })
+      : document.createEvent("MouseEvents");
+
+  if (!("clientX" in event)) {
+    (event as MouseEvent).initMouseEvent(
+      type,
+      true,
+      true,
+      document.defaultView ?? window,
+      0,
+      clientX,
+      clientY,
+      clientX,
+      clientY,
+      false,
+      false,
+      false,
+      false,
+      0,
+      null
+    );
+  }
+
+  target.dispatchEvent(event);
+}
+
+function visibleVerticalScrollbarForListbox(
+  listbox: HTMLElement
+): { scrollBar: HTMLElement; track: HTMLElement } | null {
+  const searchRoot =
+    listbox.closest<HTMLElement>(".scroll-wrapper, .slicer-dropdown-popup, .slicerContainer") ?? listbox;
+  const scrollbars = Array.from(
+    searchRoot.querySelectorAll<HTMLElement>(".scroll-element.scroll-y .scroll-bar, .scroll-y .scroll-bar")
+  );
+
+  for (const scrollBar of scrollbars) {
+    const scrollBarRect = scrollBar.getBoundingClientRect();
+    if (scrollBarRect.width <= 0 || scrollBarRect.height <= 0) {
+      continue;
+    }
+
+    const track = scrollBar.closest<HTMLElement>(".scroll-element")?.querySelector<HTMLElement>(".scroll-element_track");
+    const trackRect = track?.getBoundingClientRect();
+    if (!track || !trackRect || trackRect.width <= 0 || trackRect.height <= 0) {
+      continue;
+    }
+
+    return { scrollBar, track };
+  }
+
+  return null;
+}
+
+function dragVisibleVerticalScrollbar(listbox: HTMLElement, direction: "start" | "end"): boolean {
+  const scrollbar = visibleVerticalScrollbarForListbox(listbox);
+  if (!scrollbar) {
+    return false;
+  }
+
+  const { scrollBar, track } = scrollbar;
+  const scrollBarRect = scrollBar.getBoundingClientRect();
+  const trackRect = track.getBoundingClientRect();
+  const clientX = scrollBarRect.left + scrollBarRect.width / 2;
+  const startY = scrollBarRect.top + scrollBarRect.height / 2;
+  const endY = direction === "start" ? trackRect.top + 3 : trackRect.bottom - 3;
+
+  if (Math.abs(endY - startY) < 1) {
+    return false;
+  }
+
+  const document = scrollBar.ownerDocument;
+  dispatchMouseDragEvent(scrollBar, document, "mousedown", clientX, startY);
+
+  for (let step = 1; step <= 6; step += 1) {
+    const clientY = startY + ((endY - startY) * step) / 6;
+    dispatchMouseDragEvent(document, document, "mousemove", clientX, clientY);
+    dispatchMouseDragEvent(scrollBar, document, "mousemove", clientX, clientY);
+  }
+
+  dispatchMouseDragEvent(document, document, "mouseup", clientX, endY);
+  dispatchMouseDragEvent(scrollBar, document, "mouseup", clientX, endY);
+
+  return true;
+}
+
 function scrollSlicerElement(scrollElement: HTMLElement, listbox: HTMLElement, scrollTop: number): boolean {
   const deltaY = scrollTop - scrollElement.scrollTop;
   dispatchWheel(listbox, deltaY);
@@ -565,6 +763,67 @@ async function scanSlicerOptionsByWheel(
   }
 }
 
+async function scanSlicerOptionsByScrollbarDrag(
+  root: ParentNode,
+  control: SlicerControl,
+  title: string,
+  onOptions: (options: HTMLElement[]) => void | Promise<void>,
+  intervalMs: number
+): Promise<void> {
+  let stableSteps = 0;
+  let previousSignature = listboxSnapshotsSignature(slicerListboxSnapshots(root, control, title));
+
+  const initialSnapshots = slicerListboxSnapshots(root, control, title);
+  let resetToStart = false;
+  for (const snapshot of initialSnapshots) {
+    resetToStart = dragVisibleVerticalScrollbar(snapshot.listbox, "start") || resetToStart;
+  }
+
+  if (resetToStart) {
+    await waitForSlicerScrollRender(root, control, title, previousSignature, intervalMs);
+    const liveSnapshots = slicerListboxSnapshots(root, control, title);
+    previousSignature = listboxSnapshotsSignature(liveSnapshots);
+    for (const snapshot of liveSnapshots) {
+      await onOptions(snapshot.options.filter((option) => option.isConnected));
+    }
+  }
+
+  for (
+    let step = 0;
+    step < SLICER_SCROLLBAR_DRAG_MAX_STEPS && stableSteps < SLICER_SCROLLBAR_DRAG_STABLE_STEPS;
+    step += 1
+  ) {
+    const snapshotsBeforeDrag = slicerListboxSnapshots(root, control, title);
+    if (snapshotsBeforeDrag.length === 0) {
+      return;
+    }
+
+    let dragged = false;
+    for (const snapshot of snapshotsBeforeDrag) {
+      dragged = dragVisibleVerticalScrollbar(snapshot.listbox, "end") || dragged;
+    }
+
+    if (!dragged) {
+      return;
+    }
+
+    await waitForSlicerScrollRender(root, control, title, previousSignature, intervalMs);
+
+    const liveSnapshots = slicerListboxSnapshots(root, control, title);
+    const liveSignature = listboxSnapshotsSignature(liveSnapshots);
+    if (liveSignature === previousSignature) {
+      stableSteps += 1;
+    } else {
+      stableSteps = 0;
+      previousSignature = liveSignature;
+    }
+
+    for (const snapshot of liveSnapshots) {
+      await onOptions(snapshot.options.filter((option) => option.isConnected));
+    }
+  }
+}
+
 async function scanSlicerOptions(
   root: ParentNode,
   control: SlicerControl,
@@ -615,6 +874,7 @@ async function scanSlicerOptions(
 
     if (scrollPlan.wheelFallback && initialSnapshot.options.length >= SLICER_WHEEL_SCAN_MIN_OPTIONS) {
       await scanSlicerOptionsByWheel(root, control, title, onOptions, intervalMs);
+      await scanSlicerOptionsByScrollbarDrag(root, control, title, onOptions, intervalMs);
     }
   }
 
@@ -627,6 +887,7 @@ async function applySlicerOptionsSelection(
   title: string,
   selectedLabels: string[],
   options: {
+    dropdownOptionsTimeoutMs?: number;
     onOpened?: (combobox: HTMLElement) => void;
     onResolvedExternalOptions?: (optionCount: number) => void;
     onWaitingForExternalOptions?: (timeoutMs: number, intervalMs: number) => void;
@@ -767,6 +1028,18 @@ function initiallyMaterializedSlicerSelections(root: ParentNode, controls: ListC
   return selectionsByTitle;
 }
 
+function isSlicerAlreadyClear(root: ParentNode, control: SlicerControl): boolean {
+  if (!hasAllComboboxSummary(control)) {
+    return false;
+  }
+
+  const materializedOptions = liveSlicerListboxes(root, control, control.title).flatMap((listbox) =>
+    optionsInListbox(listbox)
+  );
+
+  return selectedLabelsFromSlicerOptions(materializedOptions).length === 0;
+}
+
 export function createPowerBiDomAdapter(root: ParentNode = document): PowerBiDomAdapter {
   return {
     async waitForFilterControls(options = {}) {
@@ -828,7 +1101,22 @@ export function createPowerBiDomAdapter(root: ParentNode = document): PowerBiDom
 
       try {
         if (control.kind === "slicer") {
+          if (selectedLabels.length === 0 && isSlicerAlreadyClear(root, control)) {
+            console.debug(LOG_PREFIX, "Applying list filter selection", {
+              title,
+              controlKind: control.kind,
+              desiredLabels: selectedLabels,
+              availableLabels: []
+            });
+            return {
+              title,
+              status: "applied",
+              message: "Applied 0 values."
+            };
+          }
+
           const result = await applySlicerOptionsSelection(root, control, title, selectedLabels, {
+            dropdownOptionsTimeoutMs: APPLY_DROPDOWN_OPTIONS_TIMEOUT_MS,
             onOpened: (combobox) => {
               openedCombobox = combobox;
               console.info(LOG_PREFIX, "Opened dropdown", {

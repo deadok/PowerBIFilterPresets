@@ -1203,6 +1203,493 @@ describe("createPowerBiDomAdapter", () => {
     ]);
   });
 
+  it("waits for slow Power BI dropdown options that appear after the first apply scan window", async () => {
+    document.body.innerHTML = `
+      <main>
+        <section class="visual customPadding visual-slicer">
+          <div class="slicer-container">
+            <h3 class="slicer-header-text" aria-label="Product" title="Product">Product</h3>
+            <div class="slicer-dropdown-menu" role="combobox" aria-label="Product">
+              <div class="slicer-restatement">All</div>
+            </div>
+          </div>
+        </section>
+      </main>
+    `;
+    const selectedTitles = new Set(["ops"]);
+    const renderOption = (title: string) => `
+      <div class="slicerItemContainer" role="option" aria-selected="${selectedTitles.has(title)}" title="${title}">
+        <div class="slicerCheckbox${selectedTitles.has(title) ? " selected" : ""}"></div>
+        <span class="slicerText">${title}</span>
+      </div>`;
+    const closePopup = () => document.querySelector(".slicer-dropdown-popup")?.remove();
+    let delayedOptionsTimer = 0;
+    document.querySelector<HTMLElement>('[role="combobox"]')?.addEventListener("click", () => {
+      if (document.querySelector(".slicer-dropdown-popup")) {
+        closePopup();
+        return;
+      }
+
+      delayedOptionsTimer = setTestTimeout(() => {
+        document.body.insertAdjacentHTML(
+          "beforeend",
+          `<div class="slicer-dropdown-popup visual themeableElement focused">
+            <div class="slicerBody" role="listbox" aria-label="Product">
+              ${renderOption("ops")}
+              ${renderOption("rating")}
+            </div>
+          </div>`
+        );
+      }, 650);
+    });
+    addDocumentListener("click", (event) => {
+      const option = (event.target as Element).closest<HTMLElement>('[role="option"]');
+      if (!option) {
+        return;
+      }
+
+      const title = option.getAttribute("title");
+      if (!title) {
+        return;
+      }
+
+      if (selectedTitles.has(title)) {
+        selectedTitles.delete(title);
+      } else {
+        selectedTitles.add(title);
+      }
+      setRenderedSlicerOptionSelected(option, selectedTitles.has(title));
+    });
+    addDocumentListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closePopup();
+      }
+    });
+    const adapter = createPowerBiDomAdapter(document);
+
+    try {
+      await expect(adapter.applyListFilterSelection("Product", ["rating"])).resolves.toEqual({
+        title: "Product",
+        status: "applied",
+        message: "Applied 1 value."
+      });
+    } finally {
+      window.clearTimeout(delayedOptionsTimer);
+    }
+
+    expect(selectedTitles).toEqual(new Set(["rating"]));
+  });
+
+  it("opens dropdown slicers with mouse events when the combobox click method is unavailable", async () => {
+    document.body.innerHTML = `
+      <main>
+        <section class="visual customPadding visual-slicer">
+          <div class="slicer-container">
+            <h3 class="slicer-header-text" aria-label="Product" title="Product">Product</h3>
+            <div class="slicer-dropdown-menu" role="combobox" aria-label="Product">
+              <div class="slicer-restatement">All</div>
+            </div>
+          </div>
+        </section>
+      </main>
+    `;
+    const selectedTitles = new Set(["ops"]);
+    const renderOption = (title: string) => `
+      <div class="slicerItemContainer" role="option" aria-selected="${selectedTitles.has(title)}" title="${title}">
+        <div class="slicerCheckbox${selectedTitles.has(title) ? " selected" : ""}"></div>
+        <span class="slicerText">${title}</span>
+      </div>`;
+    const combobox = document.querySelector<HTMLElement>('[role="combobox"]');
+    expect(combobox).not.toBeNull();
+    Object.defineProperty(combobox, "click", { configurable: true, value: undefined });
+    combobox!.addEventListener("click", () => {
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        `<div class="slicer-dropdown-popup visual themeableElement focused">
+          <div class="slicerBody" role="listbox" aria-label="Product">
+            ${renderOption("ops")}
+            ${renderOption("rating")}
+          </div>
+        </div>`
+      );
+    });
+    addDocumentListener("click", (event) => {
+      const option = (event.target as Element).closest<HTMLElement>('[role="option"]');
+      if (!option) {
+        return;
+      }
+
+      const title = option.getAttribute("title");
+      if (!title) {
+        return;
+      }
+
+      if (selectedTitles.has(title)) {
+        selectedTitles.delete(title);
+      } else {
+        selectedTitles.add(title);
+      }
+      setRenderedSlicerOptionSelected(option, selectedTitles.has(title));
+    });
+    const adapter = createPowerBiDomAdapter(document);
+
+    await expect(adapter.applyListFilterSelection("Product", ["rating"])).resolves.toEqual({
+      title: "Product",
+      status: "applied",
+      message: "Applied 1 value."
+    });
+    expect(selectedTitles).toEqual(new Set(["rating"]));
+  });
+
+  it("does not open already-clear dropdown slicers when saved labels are empty", async () => {
+    document.body.innerHTML = `
+      <main>
+        <section class="visual customPadding visual-slicer">
+          <div class="slicer-container">
+            <h3 class="slicer-header-text" aria-label="Product" title="Product">Product</h3>
+            <div class="slicer-dropdown-menu" role="combobox" aria-label="Product">
+              <div class="slicer-restatement">All</div>
+            </div>
+          </div>
+        </section>
+      </main>
+    `;
+    let opened = false;
+    document.querySelector<HTMLElement>('[role="combobox"]')?.addEventListener("click", () => {
+      opened = true;
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        `<div class="slicer-dropdown-popup visual themeableElement focused">
+          <div class="slicerBody" role="listbox" aria-label="Product">
+            <div class="slicerItemContainer" role="option" aria-selected="false" title="rating">
+              <div class="slicerCheckbox"></div>
+              <span class="slicerText">rating</span>
+            </div>
+          </div>
+        </div>`
+      );
+    });
+    const adapter = createPowerBiDomAdapter(document);
+
+    await expect(adapter.applyListFilterSelection("Product", [])).resolves.toEqual({
+      title: "Product",
+      status: "applied",
+      message: "Applied 0 values."
+    });
+    expect(opened).toBe(false);
+    expect(document.querySelector(".slicer-dropdown-popup")).toBeNull();
+  });
+
+  it("opens dropdown slicers with mouse events when native click alone does not open Power BI menus", async () => {
+    document.body.innerHTML = `
+      <main>
+        <section class="visual customPadding visual-slicer">
+          <div class="slicer-container">
+            <h3 class="slicer-header-text" aria-label="Product" title="Product">Product</h3>
+            <div class="slicer-dropdown-menu" role="combobox" aria-label="Product">
+              <div class="slicer-restatement">All</div>
+            </div>
+          </div>
+        </section>
+      </main>
+    `;
+    const selectedTitles = new Set(["ops"]);
+    const renderOption = (title: string) => `
+      <div class="slicerItemContainer" role="option" aria-selected="${selectedTitles.has(title)}" title="${title}">
+        <div class="slicerCheckbox${selectedTitles.has(title) ? " selected" : ""}"></div>
+        <span class="slicerText">${title}</span>
+      </div>`;
+    document.querySelector<HTMLElement>('[role="combobox"]')?.addEventListener("mousedown", () => {
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        `<div class="slicer-dropdown-popup visual themeableElement focused">
+          <div class="slicerBody" role="listbox" aria-label="Product">
+            ${renderOption("ops")}
+            ${renderOption("rating")}
+          </div>
+        </div>`
+      );
+    });
+    addDocumentListener("click", (event) => {
+      const option = (event.target as Element).closest<HTMLElement>('[role="option"]');
+      if (!option) {
+        return;
+      }
+
+      const title = option.getAttribute("title");
+      if (!title) {
+        return;
+      }
+
+      if (selectedTitles.has(title)) {
+        selectedTitles.delete(title);
+      } else {
+        selectedTitles.add(title);
+      }
+      setRenderedSlicerOptionSelected(option, selectedTitles.has(title));
+    });
+    const adapter = createPowerBiDomAdapter(document);
+
+    await expect(adapter.applyListFilterSelection("Product", ["rating"])).resolves.toEqual({
+      title: "Product",
+      status: "applied",
+      message: "Applied 1 value."
+    });
+    expect(selectedTitles).toEqual(new Set(["rating"]));
+  });
+
+  it("uses native click for visible slicer options after opening Power BI dropdowns with mouse events", async () => {
+    document.body.innerHTML = `
+      <main>
+        <section class="visual customPadding visual-slicer">
+          <div class="slicer-container">
+            <h3 class="slicer-header-text" aria-label="Product" title="Product">Product</h3>
+            <div class="slicer-dropdown-menu" role="combobox" aria-label="Product">
+              <div class="slicer-restatement">All</div>
+            </div>
+          </div>
+        </section>
+      </main>
+    `;
+    const selectedTitles = new Set(["ops"]);
+    const renderOption = (title: string) => `
+      <div class="slicerItemContainer" role="option" aria-selected="${selectedTitles.has(title)}" title="${title}">
+        <div class="slicerCheckbox${selectedTitles.has(title) ? " selected" : ""}"></div>
+        <span class="slicerText">${title}</span>
+      </div>`;
+    const renderPopup = () => {
+      document.querySelector(".slicer-dropdown-popup")?.remove();
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        `<div class="slicer-dropdown-popup visual themeableElement focused">
+          <div class="slicerBody" role="listbox" aria-label="Product">
+            ${renderOption("ops")}
+            ${renderOption("rating")}
+          </div>
+        </div>`
+      );
+
+      for (const option of Array.from(document.querySelectorAll<HTMLElement>('[role="option"]'))) {
+        option.click = () => {
+          const title = option.getAttribute("title");
+          if (!title) {
+            return;
+          }
+          if (selectedTitles.has(title)) {
+            selectedTitles.delete(title);
+          } else {
+            selectedTitles.add(title);
+          }
+          setRenderedSlicerOptionSelected(option, selectedTitles.has(title));
+        };
+      }
+    };
+    document.querySelector<HTMLElement>('[role="combobox"]')?.addEventListener("mousedown", renderPopup);
+    const adapter = createPowerBiDomAdapter(document);
+
+    await expect(adapter.applyListFilterSelection("Product", ["rating"])).resolves.toEqual({
+      title: "Product",
+      status: "applied",
+      message: "Applied 1 value."
+    });
+    expect(selectedTitles).toEqual(new Set(["rating"]));
+  });
+
+  it("waits for real dropdown values after Power BI first renders only Select all", async () => {
+    document.body.innerHTML = `
+      <main>
+        <section class="visual customPadding visual-slicer">
+          <div class="slicer-container">
+            <h3 class="slicer-header-text" aria-label="Product" title="Product">Product</h3>
+            <div class="slicer-dropdown-menu" role="combobox" aria-label="Product">
+              <div class="slicer-restatement">All</div>
+            </div>
+          </div>
+        </section>
+      </main>
+    `;
+    const selectedTitles = new Set<string>();
+    const renderOption = (title: string) => `
+      <div class="slicerItemContainer" role="option" aria-selected="${selectedTitles.has(title)}" title="${title}">
+        <div class="slicerCheckbox${selectedTitles.has(title) ? " selected" : ""}"></div>
+        <span class="slicerText">${title}</span>
+      </div>`;
+    document.querySelector<HTMLElement>('[role="combobox"]')?.addEventListener("mousedown", () => {
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        `<div class="slicer-dropdown-popup visual themeableElement focused">
+          <div class="slicerBody" role="listbox" aria-label="Product">
+            ${renderOption("Select all")}
+          </div>
+        </div>`
+      );
+
+      setTestTimeout(() => {
+        const listbox = document.querySelector<HTMLElement>('[role="listbox"][aria-label="Product"]');
+        if (listbox) {
+          listbox.innerHTML = [renderOption("Select all"), renderOption("ops"), renderOption("rating")].join("");
+        }
+      }, 120);
+    });
+    addDocumentListener("click", (event) => {
+      const option = (event.target as Element).closest<HTMLElement>('[role="option"]');
+      if (!option) {
+        return;
+      }
+
+      const title = option.getAttribute("title");
+      if (!title || title === "Select all") {
+        return;
+      }
+
+      if (selectedTitles.has(title)) {
+        selectedTitles.delete(title);
+      } else {
+        selectedTitles.add(title);
+      }
+      setRenderedSlicerOptionSelected(option, selectedTitles.has(title));
+    });
+    const adapter = createPowerBiDomAdapter(document);
+
+    await expect(adapter.applyListFilterSelection("Product", ["rating"])).resolves.toEqual({
+      title: "Product",
+      status: "applied",
+      message: "Applied 1 value."
+    });
+    expect(selectedTitles).toEqual(new Set(["rating"]));
+  });
+
+  it("keeps waiting when Power BI leaves the dropdown in Select all-only state for more than 1.5 seconds", async () => {
+    document.body.innerHTML = `
+      <main>
+        <section class="visual customPadding visual-slicer">
+          <div class="slicer-container">
+            <h3 class="slicer-header-text" aria-label="Product" title="Product">Product</h3>
+            <div class="slicer-dropdown-menu" role="combobox" aria-label="Product">
+              <div class="slicer-restatement">All</div>
+            </div>
+          </div>
+        </section>
+      </main>
+    `;
+    const selectedTitles = new Set<string>();
+    const renderOption = (title: string) => `
+      <div class="slicerItemContainer" role="option" aria-selected="${selectedTitles.has(title)}" title="${title}">
+        <div class="slicerCheckbox${selectedTitles.has(title) ? " selected" : ""}"></div>
+        <span class="slicerText">${title}</span>
+      </div>`;
+    document.querySelector<HTMLElement>('[role="combobox"]')?.addEventListener("mousedown", () => {
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        `<div class="slicer-dropdown-popup visual themeableElement focused">
+          <div class="slicerBody" role="listbox" aria-label="Product">
+            ${renderOption("Select all")}
+          </div>
+        </div>`
+      );
+
+      setTestTimeout(() => {
+        const listbox = document.querySelector<HTMLElement>('[role="listbox"][aria-label="Product"]');
+        if (listbox) {
+          listbox.innerHTML = [renderOption("Select all"), renderOption("ops"), renderOption("rating")].join("");
+        }
+      }, 2200);
+    });
+    addDocumentListener("click", (event) => {
+      const option = (event.target as Element).closest<HTMLElement>('[role="option"]');
+      if (!option) {
+        return;
+      }
+
+      const title = option.getAttribute("title");
+      if (!title || title === "Select all") {
+        return;
+      }
+
+      if (selectedTitles.has(title)) {
+        selectedTitles.delete(title);
+      } else {
+        selectedTitles.add(title);
+      }
+      setRenderedSlicerOptionSelected(option, selectedTitles.has(title));
+    });
+    const adapter = createPowerBiDomAdapter(document);
+
+    await expect(adapter.applyListFilterSelection("Product", ["rating"])).resolves.toEqual({
+      title: "Product",
+      status: "applied",
+      message: "Applied 1 value."
+    });
+    expect(selectedTitles).toEqual(new Set(["rating"]));
+  });
+
+  it("ignores non-slicer external listboxes with matching titles while applying dropdown slicers", async () => {
+    document.body.innerHTML = `
+      <main>
+        <section class="visual customPadding visual-slicer">
+          <div class="slicer-container">
+            <h3 class="slicer-header-text" aria-label="Product" title="Product">Product</h3>
+            <div class="slicer-dropdown-menu" role="combobox" aria-label="Product">
+              <div class="slicer-restatement">All</div>
+            </div>
+          </div>
+        </section>
+        <section class="visual customPadding visual-lineChart">
+          <div class="legend flex-row" role="region" aria-label="Legend Product">
+            <div class="legend-item-container" role="listbox" aria-label="Product">
+              <div class="legend-item" role="option" aria-selected="false" aria-label="ops">opsops</div>
+            </div>
+          </div>
+        </section>
+      </main>
+    `;
+    const selectedTitles = new Set(["ops"]);
+    const renderOption = (title: string) => `
+      <div class="slicerItemContainer" role="option" aria-selected="${selectedTitles.has(title)}" title="${title}">
+        <div class="slicerCheckbox${selectedTitles.has(title) ? " selected" : ""}"></div>
+        <span class="slicerText">${title}</span>
+      </div>`;
+    document.querySelector<HTMLElement>('[role="combobox"]')?.addEventListener("click", () => {
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        `<div class="slicer-dropdown-popup visual themeableElement focused">
+          <div class="slicerContainer isMultiSelectEnabled">
+            <div class="slicerBody" role="listbox" aria-label="Product">
+              ${renderOption("ops")}
+              ${renderOption("rating")}
+            </div>
+          </div>
+        </div>`
+      );
+    });
+    addDocumentListener("click", (event) => {
+      const option = (event.target as Element).closest<HTMLElement>('[role="option"]');
+      if (!option || option.classList.contains("legend-item")) {
+        return;
+      }
+
+      const title = option.getAttribute("title");
+      if (!title) {
+        return;
+      }
+
+      if (selectedTitles.has(title)) {
+        selectedTitles.delete(title);
+      } else {
+        selectedTitles.add(title);
+      }
+      setRenderedSlicerOptionSelected(option, selectedTitles.has(title));
+    });
+    const adapter = createPowerBiDomAdapter(document);
+
+    await expect(adapter.applyListFilterSelection("Product", ["rating"])).resolves.toEqual({
+      title: "Product",
+      status: "applied",
+      message: "Applied 1 value."
+    });
+    expect(selectedTitles).toEqual(new Set(["rating"]));
+  });
+
   it("scrolls virtualized dropdown slicer options while applying saved labels", async () => {
     document.body.innerHTML = `
       <main>
@@ -1484,6 +1971,143 @@ describe("createPowerBiDomAdapter", () => {
     });
 
     expect(selectedTitles).toEqual(new Set(["delta"]));
+  });
+
+  it("drags Power BI custom scrollbar thumbs when dropdowns do not expose DOM scroll metrics", async () => {
+    document.body.innerHTML = `
+      <main>
+        <section class="visual customPadding visual-slicer">
+          <div class="slicer-container">
+            <h3 class="slicer-header-text" aria-label="Product" title="Product">Product</h3>
+            <div class="slicer-dropdown-menu" role="combobox" aria-label="Product">
+              <div class="slicer-restatement">All</div>
+            </div>
+          </div>
+        </section>
+      </main>
+    `;
+    const selectedTitles = new Set(["value-001"]);
+    const labels = Array.from({ length: 20 }, (_value, index) => `value-${String(index + 1).padStart(3, "0")}`);
+    const visibleRows = 8;
+    let topIndex = 0;
+    let dragging = false;
+    const renderOption = (title: string) => `
+      <div class="slicerItemContainer" role="option" aria-selected="${selectedTitles.has(title)}" title="${title}">
+        <div class="slicerCheckbox${selectedTitles.has(title) ? " selected" : ""}"></div>
+        <span class="slicerText">${title}</span>
+      </div>`;
+    const visibleLabels = () => labels.slice(topIndex, topIndex + visibleRows);
+    const setRect = (element: HTMLElement, rect: { x: number; y: number; width: number; height: number }) => {
+      element.getBoundingClientRect = () =>
+        ({
+          ...rect,
+          top: rect.y,
+          left: rect.x,
+          right: rect.x + rect.width,
+          bottom: rect.y + rect.height,
+          toJSON: () => rect
+        }) as DOMRect;
+    };
+    const attachRects = () => {
+      const listbox = document.querySelector<HTMLElement>('[role="listbox"][aria-label="Product"]');
+      const scrollbar = document.querySelector<HTMLElement>(".scroll-element.scroll-y .scroll-bar");
+      const track = document.querySelector<HTMLElement>(".scroll-element.scroll-y .scroll-element_track");
+      expect(listbox).not.toBeNull();
+      expect(scrollbar).not.toBeNull();
+      expect(track).not.toBeNull();
+      setRect(listbox!, { x: 100, y: 100, width: 240, height: 160 });
+      setRect(track!, { x: 332, y: 100, width: 8, height: 160 });
+      setRect(scrollbar!, { x: 332, y: 100 + topIndex * 4, width: 8, height: 20 });
+    };
+    const renderVisibleOptions = () => {
+      const listbox = document.querySelector<HTMLElement>('[role="listbox"][aria-label="Product"]');
+      if (listbox) {
+        listbox.innerHTML = visibleLabels().map(renderOption).join("");
+      }
+      attachRects();
+    };
+    const closePopup = () => document.querySelector(".slicer-dropdown-popup")?.remove();
+    document.querySelector<HTMLElement>('[role="combobox"]')?.addEventListener("click", () => {
+      if (document.querySelector(".slicer-dropdown-popup")) {
+        closePopup();
+        return;
+      }
+
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        `<div class="slicer-dropdown-popup visual themeableElement focused">
+          <div class="scroll-wrapper scrollbar-inner">
+            <div class="scrollbar-inner scroll-content scroll-scrolly_visible">
+              <div class="scrollRegion">
+                <div class="visibleGroup">
+                  <div class="slicerBody" role="listbox" aria-label="Product"></div>
+                </div>
+              </div>
+            </div>
+            <div class="scroll-element scroll-y scroll-scrolly_visible">
+              <div class="scroll-element_outer">
+                <div class="scroll-element_size"></div>
+                <div class="scroll-element_track"></div>
+                <div class="scroll-bar" style="height: 20px; top: 0px;"></div>
+              </div>
+            </div>
+          </div>
+        </div>`
+      );
+      renderVisibleOptions();
+    });
+    addDocumentListener("mousedown", (event) => {
+      if ((event.target as Element).closest(".scroll-bar")) {
+        dragging = true;
+      }
+    });
+    addDocumentListener("mousemove", (event) => {
+      if (!dragging) {
+        return;
+      }
+      const nextTopIndex = Math.min(
+        labels.length - visibleRows,
+        Math.max(0, Math.round((((event as MouseEvent).clientY - 100) / 160) * (labels.length - visibleRows)))
+      );
+      if (nextTopIndex !== topIndex) {
+        topIndex = nextTopIndex;
+        renderVisibleOptions();
+      }
+    });
+    addDocumentListener("mouseup", () => {
+      dragging = false;
+    });
+    addDocumentListener("click", (event) => {
+      const option = (event.target as Element).closest<HTMLElement>('[role="option"]');
+      if (!option) {
+        return;
+      }
+
+      const title = option.getAttribute("title");
+      if (!title) {
+        return;
+      }
+
+      if (selectedTitles.has(title)) {
+        selectedTitles.delete(title);
+      } else {
+        selectedTitles.add(title);
+      }
+      setRenderedSlicerOptionSelected(option, selectedTitles.has(title));
+    });
+    addDocumentListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closePopup();
+      }
+    });
+    const adapter = createPowerBiDomAdapter(document);
+
+    await expect(adapter.applyListFilterSelection("Product", ["value-020"])).resolves.toEqual({
+      title: "Product",
+      status: "applied",
+      message: "Applied 1 value."
+    });
+    expect(selectedTitles).toEqual(new Set(["value-020"]));
   });
 
   it("reports timeout instead of missing values when a virtualized dropdown exceeds the scan budget", async () => {

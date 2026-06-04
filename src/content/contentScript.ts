@@ -44,9 +44,27 @@ export function installDebugPresetHook(
   requestHandler: (request: ContentRequest) => Promise<ContentResponse> = handleRequest
 ): void {
   targetWindow.addEventListener("PowerBIFilterPresets:applyPreset", (event) => {
-    void applyDebugPreset((event as CustomEvent<unknown>).detail, requestHandler).catch((error: unknown) => {
-      console.error(LOG_PREFIX, "Debug preset apply failed:", error instanceof Error ? error.message : error);
-    });
+    const detail = (event as CustomEvent<{ presetExport?: unknown; requestId?: string }>).detail;
+    const requestId = detail?.requestId;
+    const presetExport = detail?.presetExport ?? detail;
+
+    void applyDebugPreset(presetExport, requestHandler)
+      .then((response) => {
+        if (requestId) {
+          targetWindow.dispatchEvent(
+            new CustomEvent("PowerBIFilterPresets:applyPresetResult", { detail: { requestId, response } })
+          );
+        }
+      })
+      .catch((error: unknown) => {
+        const errorMessage = error instanceof Error ? error.message : "Unknown apply preset error.";
+        console.error(LOG_PREFIX, "Debug preset apply failed:", errorMessage);
+        if (requestId) {
+          targetWindow.dispatchEvent(
+            new CustomEvent("PowerBIFilterPresets:applyPresetResult", { detail: { requestId, error: errorMessage } })
+          );
+        }
+      });
   });
 
   targetWindow.addEventListener("PowerBIFilterPresets:readFilters", (event) => {

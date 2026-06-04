@@ -39,6 +39,31 @@ describe("applyDebugPreset", () => {
     await vi.waitFor(() => expect(handleRequest).toHaveBeenCalledWith({ type: "APPLY_FILTERS", filters }));
   });
 
+  it("dispatches an apply result event for page DevTools diagnostics", async () => {
+    const response: ContentResponse = { ok: true, results: [] };
+    const handleRequest = vi.fn().mockResolvedValue(response);
+    const target = new EventTarget() as Window;
+    const result = new Promise<CustomEvent<{ requestId: string; response: ContentResponse }>>((resolve) => {
+      target.addEventListener("PowerBIFilterPresets:applyPresetResult", (event) => resolve(event as CustomEvent));
+    });
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    installDebugPresetHook(target, handleRequest);
+    target.dispatchEvent(
+      new CustomEvent("PowerBIFilterPresets:applyPreset", {
+        detail: { requestId: "apply-1", presetExport: serializePresetExport(samplePreset) }
+      })
+    );
+
+    await expect(result).resolves.toMatchObject({
+      detail: {
+        requestId: "apply-1",
+        response
+      }
+    });
+    expect(handleRequest).toHaveBeenCalledWith({ type: "APPLY_FILTERS", filters });
+  });
+
   it("installs a debug hook for reading filters through the request handler", async () => {
     const response: ContentResponse = { ok: true, filters };
     const handleRequest = vi.fn().mockResolvedValue(response);
