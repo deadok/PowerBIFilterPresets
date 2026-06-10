@@ -1,15 +1,101 @@
 <section class="popup-shell">
-  <header>
-    <h1>Power BI Presets</h1>
-    <p id="page-status">Loading current page...</p>
-  </header>
-  <button id="save-current" type="button">Save current filters</button>
-  <select id="preset-select" aria-label="Saved presets"></select>
-  <div class="actions">
-    <button id="apply-preset" type="button">Apply selected preset</button>
-    <button id="export-preset" type="button">Export JSON</button>
-    <button id="rename-preset" type="button">Rename</button>
-    <button id="delete-preset" type="button">Delete</button>
+  <div class="popup-content">
+    <header>
+      <h1>Power BI Presets</h1>
+      <p id="page-status">Loading current page...</p>
+    </header>
+
+    <button id="save-current" class="button-secondary button-with-icon" type="button">
+      <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+        <path d="M5 3h12l2 2v16H5z"></path>
+        <path d="M8 3v6h8V3M8 21v-8h8v8"></path>
+      </svg>
+      <span>Save current filters</span>
+    </button>
+
+    <hr class="popup-separator" aria-hidden="true" />
+
+    <div class="selected-preset">
+      <label for="preset-select">Selected preset</label>
+      <select id="preset-select"></select>
+
+      <button id="apply-preset" class="button-primary button-with-icon" type="button">
+        <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9"></circle>
+          <path d="m8 12 2.5 2.5L16 9"></path>
+        </svg>
+        <span>Apply preset</span>
+      </button>
+
+      <div class="preset-actions">
+        <button
+          id="export-preset"
+          class="icon-button"
+          type="button"
+          aria-label="Copy preset JSON"
+          title="Copy preset JSON"
+          data-tooltip="Copy preset JSON"
+        >
+          <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+            <rect x="8" y="8" width="11" height="11" rx="2"></rect>
+            <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path>
+          </svg>
+        </button>
+        <button
+          id="rename-preset"
+          class="icon-button"
+          type="button"
+          aria-label="Rename preset"
+          title="Rename preset"
+          data-tooltip="Rename preset"
+        >
+          <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+            <path d="m4 16-.8 4.8L8 20l10.5-10.5-4-4z"></path>
+            <path d="m13 7 4 4M12 20h9"></path>
+          </svg>
+        </button>
+        <button
+          id="delete-preset"
+          class="icon-button icon-button-destructive"
+          type="button"
+          aria-label="Delete preset"
+          title="Delete preset"
+          data-tooltip="Delete preset"
+        >
+          <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+            <path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <output id="result" aria-live="polite"></output>
   </div>
-  <output id="result" aria-live="polite"></output>
+
+  <div class="modal-backdrop" hidden>
+    <section
+      class="delete-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="delete-dialog-title"
+      aria-describedby="delete-dialog-description"
+      tabindex="-1"
+      hidden
+    >
+      <h2 id="delete-dialog-title">Delete preset?</h2>
+      <p id="delete-dialog-description">
+        Delete <strong id="delete-preset-name"></strong>? This permanently removes the preset.
+      </p>
+      <p id="delete-error" class="dialog-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button id="cancel-delete" class="button-secondary" type="button">Cancel</button>
+        <button id="confirm-delete" class="button-destructive button-with-icon" type="button">
+          <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+            <path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13"></path>
+          </svg>
+          <span>Delete</span>
+        </button>
+      </div>
+    </section>
+  </div>
 </section>
