@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Preset } from "../../src/shared/types";
+import type { FilterPresetItem, Preset } from "../../src/shared/types";
 
 const testState = vi.hoisted(() => ({
   presets: [] as Preset[],
@@ -33,6 +33,10 @@ function preset(id: string, name: string): Preset {
     updatedAt: "2026-06-09T10:00:00.000Z",
     filters: [{ title: "Region", type: "list", selectedLabels: ["EMEA"] }]
   };
+}
+
+function filter(title: string, selectedLabels: string[]): FilterPresetItem {
+  return { title, type: "list", selectedLabels };
 }
 
 function collection() {
@@ -94,6 +98,14 @@ function confirmDeleteButton(): HTMLButtonElement {
   return button;
 }
 
+async function openSaveReview(filters: FilterPresetItem[]): Promise<void> {
+  testState.sendContentRequestToActiveTab.mockResolvedValueOnce({ ok: true, filters });
+  click(document.querySelector("#save-current") as Element);
+  await vi.waitFor(() => {
+    expect(document.querySelector<HTMLElement>("#save-review-dialog")?.hidden).toBe(false);
+  });
+}
+
 describe("popup", () => {
   beforeEach(() => {
     vi.resetModules();
@@ -103,6 +115,7 @@ describe("popup", () => {
       configurable: true,
       value: { writeText: vi.fn().mockResolvedValue(undefined) }
     });
+    vi.spyOn(crypto, "randomUUID").mockReturnValue("00000000-0000-0000-0000-000000000000");
   });
 
   it("renders the approved main action hierarchy and selected-preset states", async () => {
@@ -180,11 +193,11 @@ describe("popup", () => {
     click(trigger);
     click(trigger);
 
-    const dialog = document.querySelector<HTMLElement>('[role="dialog"]');
+    const dialog = document.querySelector<HTMLElement>(".delete-dialog");
     expect(dialog?.hidden).toBe(false);
     expect(dialog?.textContent).toContain("Очень длинное имя пресета для проверки");
     expect(testState.deletePreset).not.toHaveBeenCalled();
-    expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+    expect(document.querySelectorAll(".delete-dialog")).toHaveLength(1);
     expect(document.activeElement).toBe(document.querySelector("#cancel-delete"));
 
     click(document.querySelector("#cancel-delete") as Element);
@@ -201,7 +214,7 @@ describe("popup", () => {
 
     document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 
-    expect(document.querySelector<HTMLElement>('[role="dialog"]')?.hidden).toBe(true);
+    expect(document.querySelector<HTMLElement>(".delete-dialog")?.hidden).toBe(true);
     expect(document.activeElement).toBe(trigger);
     expect(testState.deletePreset).not.toHaveBeenCalled();
   });
@@ -267,7 +280,7 @@ describe("popup", () => {
     await vi.waitFor(() => {
       expect(document.querySelector("#delete-error")?.textContent).toBe("Storage unavailable.");
     });
-    expect(document.querySelector<HTMLElement>('[role="dialog"]')?.hidden).toBe(false);
+    expect(document.querySelector<HTMLElement>(".delete-dialog")?.hidden).toBe(false);
     expect(document.querySelector("#result")?.textContent).not.toBe("Preset deleted.");
     expect(selectPreset("one").value).toBe("one");
   });
@@ -286,18 +299,18 @@ describe("popup", () => {
     click(confirmDeleteButton());
     const cancel = document.querySelector<HTMLButtonElement>("#cancel-delete");
     expect(cancel?.disabled).toBe(true);
-    expect(document.activeElement).toBe(document.querySelector('[role="dialog"]'));
+    expect(document.activeElement).toBe(document.querySelector(".delete-dialog"));
 
     cancel?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
-    expect(document.activeElement).toBe(document.querySelector('[role="dialog"]'));
+    expect(document.activeElement).toBe(document.querySelector(".delete-dialog"));
     document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 
-    expect(document.querySelector<HTMLElement>('[role="dialog"]')?.hidden).toBe(false);
+    expect(document.querySelector<HTMLElement>(".delete-dialog")?.hidden).toBe(false);
     resolveDeletion?.({ ...collection(), presets: [] });
 
     await vi.waitFor(() => {
-      expect(document.querySelector<HTMLElement>('[role="dialog"]')?.hidden).toBe(true);
+      expect(document.querySelector<HTMLElement>(".delete-dialog")?.hidden).toBe(true);
     });
   });
 
@@ -316,7 +329,6 @@ describe("popup", () => {
   it("keeps Copy JSON and Rename wired to the selected preset", async () => {
     const original = preset("one", "Sales review");
     await mountPopup([original]);
-    const prompt = vi.spyOn(window, "prompt").mockReturnValue("Renamed preset");
 
     click(document.querySelector("#export-preset") as Element);
     await vi.waitFor(() => {
@@ -325,12 +337,442 @@ describe("popup", () => {
 
     click(document.querySelector("#rename-preset") as Element);
     await vi.waitFor(() => {
-      expect(prompt).toHaveBeenCalledWith("Preset name", "Sales review");
+      expect(document.querySelector<HTMLElement>("#rename-dialog")?.hidden).toBe(false);
+    });
+    const nameInput = document.querySelector<HTMLInputElement>("#rename-name");
+    if (!nameInput) {
+      throw new Error("Rename input not found.");
+    }
+    nameInput.value = "Renamed preset";
+    nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+    click(document.querySelector("#confirm-rename") as Element);
+
+    await vi.waitFor(() => {
       expect(testState.savePreset).toHaveBeenCalledWith(
         pageKey,
-        expect.objectContaining({ id: "one", name: "Renamed preset" })
+        expect.objectContaining({ id: "one", name: "Renamed preset" }),
+        { requireExisting: true, uniqueNormalizedName: "renamed preset" }
       );
       expect(document.querySelector("#result")?.textContent).toBe("Preset renamed.");
     });
+  });
+
+  it("opens Save Review only after successful capture and prevents duplicate capture requests", async () => {
+    let resolveCapture: ((response: { ok: true; filters: FilterPresetItem[] }) => void) | undefined;
+    await mountPopup([]);
+    testState.sendContentRequestToActiveTab.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveCapture = resolve;
+        })
+    );
+
+    click(document.querySelector("#save-current") as Element);
+    click(document.querySelector("#save-current") as Element);
+
+    expect(document.querySelector("#result")?.textContent).toBe("Reading filters...");
+    expect(document.querySelector<HTMLElement>("#save-review-dialog")?.hidden).toBe(true);
+    expect(testState.sendContentRequestToActiveTab).toHaveBeenCalledTimes(1);
+    expect(document.querySelector<HTMLButtonElement>("#rename-preset")?.disabled).toBe(true);
+    expect(document.querySelector<HTMLSelectElement>("#preset-select")?.disabled).toBe(true);
+
+    resolveCapture?.({ ok: true, filters: [filter("Region", ["EMEA"])] });
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>("#save-review-dialog")?.hidden).toBe(false);
+    });
+  });
+
+  it("blocks other dialogs while capture is pending", async () => {
+    let resolveCapture: ((response: { ok: true; filters: FilterPresetItem[] }) => void) | undefined;
+    await mountPopup([preset("one", "One")]);
+    testState.sendContentRequestToActiveTab.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveCapture = resolve;
+        })
+    );
+    click(document.querySelector("#save-current") as Element);
+    click(document.querySelector("#delete-preset") as Element);
+    expect(document.querySelector<HTMLElement>(".delete-dialog")?.hidden).toBe(true);
+
+    resolveCapture?.({ ok: true, filters: [filter("Region", ["EMEA"])] });
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>("#save-review-dialog")?.hidden).toBe(false);
+    });
+    expect(document.activeElement).toBe(document.querySelector("#save-name"));
+  });
+
+  it("keeps the main popup visible when capture fails", async () => {
+    await mountPopup([]);
+    testState.sendContentRequestToActiveTab.mockResolvedValueOnce({ ok: false, error: "Capture failed." });
+
+    click(document.querySelector("#save-current") as Element);
+
+    await vi.waitFor(() => {
+      expect(document.querySelector("#result")?.textContent).toBe("Capture failed.");
+    });
+    expect(document.querySelector<HTMLElement>("#save-review-dialog")?.hidden).toBe(true);
+    expect(document.querySelector<HTMLElement>(".popup-content")?.hasAttribute("inert")).toBe(false);
+  });
+
+  it("shows only eligible filters in captured order with values collapsed and included", async () => {
+    await mountPopup([]);
+    await openSaveReview([
+      filter("Region", ["EMEA", "APAC"]),
+      filter("Empty", []),
+      filter("Department", ["Produce", "Bakery"])
+    ]);
+
+    const rows = Array.from(document.querySelectorAll<HTMLElement>(".review-filter"));
+    expect(rows.map((row) => row.querySelector(".review-filter-title")?.textContent)).toEqual([
+      "Region",
+      "Department"
+    ]);
+    expect(rows.map((row) => row.querySelector(".review-filter-count")?.textContent)).toEqual(["2", "2"]);
+    expect(rows.map((row) => row.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked)).toEqual([
+      true,
+      true
+    ]);
+    expect(rows.map((row) => row.querySelector<HTMLButtonElement>(".review-filter-disclosure")?.ariaExpanded)).toEqual([
+      "false",
+      "false"
+    ]);
+    expect(document.querySelector("#review-selection-count")?.textContent).toContain("2");
+  });
+
+  it("preserves value order and allows independent simultaneous expansion", async () => {
+    await mountPopup([]);
+    await openSaveReview([filter("Region", ["West", "East"]), filter("Team", ["Бета", "Альфа"])]);
+    const disclosures = Array.from(document.querySelectorAll<HTMLButtonElement>(".review-filter-disclosure"));
+    click(disclosures[0] as Element);
+    click(disclosures[1] as Element);
+
+    expect(disclosures.map((button) => button.ariaExpanded)).toEqual(["true", "true"]);
+    expect(
+      Array.from(document.querySelectorAll(".review-filter-values")).map((list) =>
+        Array.from(list.querySelectorAll("li")).map((item) => item.textContent)
+      )
+    ).toEqual([
+      ["West", "East"],
+      ["Бета", "Альфа"]
+    ]);
+
+    const firstCheckbox = document.querySelector<HTMLInputElement>('.review-filter input[type="checkbox"]');
+    if (!firstCheckbox) {
+      throw new Error("Review checkbox not found.");
+    }
+    click(firstCheckbox);
+    expect(firstCheckbox.checked).toBe(false);
+    expect(disclosures[0]?.ariaExpanded).toBe("true");
+  });
+
+  it("supports Select all and Clear all and requires one included filter", async () => {
+    await mountPopup([]);
+    await openSaveReview([filter("Region", ["EMEA"]), filter("Team", ["North"])]);
+
+    click(document.querySelector("#clear-all-filters") as Element);
+    expect(
+      Array.from(document.querySelectorAll<HTMLInputElement>('.review-filter input[type="checkbox"]')).map(
+        (checkbox) => checkbox.checked
+      )
+    ).toEqual([false, false]);
+    expect(document.querySelector<HTMLButtonElement>("#confirm-save")?.disabled).toBe(true);
+    expect(document.querySelector("#review-selection-guidance")?.textContent).toBe("Select at least one filter.");
+
+    click(document.querySelector("#select-all-filters") as Element);
+    expect(
+      Array.from(document.querySelectorAll<HTMLInputElement>('.review-filter input[type="checkbox"]')).map(
+        (checkbox) => checkbox.checked
+      )
+    ).toEqual([true, true]);
+    expect(document.querySelector<HTMLButtonElement>("#confirm-save")?.disabled).toBe(false);
+  });
+
+  it("shows the empty review state when capture contains no selected values", async () => {
+    await mountPopup([]);
+    await openSaveReview([filter("Region", []), filter("Team", [])]);
+
+    expect(document.querySelector("#review-empty")?.textContent).toContain(
+      "No selected filter values found. Select values in Power BI and try again."
+    );
+    expect(document.querySelectorAll(".review-filter")).toHaveLength(0);
+    expect(document.querySelector<HTMLButtonElement>("#confirm-save")?.disabled).toBe(true);
+  });
+
+  it("validates required and duplicate save names without writing storage", async () => {
+    await mountPopup([preset("one", "Sales Review")]);
+    await openSaveReview([filter("Region", ["EMEA"])]);
+    const nameInput = document.querySelector<HTMLInputElement>("#save-name");
+    if (!nameInput) {
+      throw new Error("Save name input not found.");
+    }
+
+    nameInput.value = "   ";
+    click(document.querySelector("#confirm-save") as Element);
+    await vi.waitFor(() => {
+      expect(document.querySelector("#save-name-error")?.textContent).toBe("Enter a preset name.");
+    });
+
+    nameInput.value = "  sales review  ";
+    click(document.querySelector("#confirm-save") as Element);
+    await vi.waitFor(() => {
+      expect(document.querySelector("#save-name-error")?.textContent).toBe(
+        "A preset with this name already exists."
+      );
+    });
+    expect(testState.savePreset).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(nameInput);
+  });
+
+  it("cancels Save Review without persisting and restores focus", async () => {
+    await mountPopup([]);
+    const trigger = document.querySelector<HTMLButtonElement>("#save-current");
+    await openSaveReview([filter("Region", ["EMEA"])]);
+
+    click(document.querySelector("#cancel-save") as Element);
+
+    expect(document.querySelector<HTMLElement>("#save-review-dialog")?.hidden).toBe(true);
+    expect(testState.savePreset).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("cancels Save Review on Escape and restores the Feature 1 popup width state", async () => {
+    await mountPopup([]);
+    const trigger = document.querySelector<HTMLButtonElement>("#save-current");
+    await openSaveReview([filter("Region", ["EMEA"])]);
+    expect(document.body.classList.contains("review-open")).toBe(true);
+
+    document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+
+    expect(document.querySelector<HTMLElement>("#save-review-dialog")?.hidden).toBe(true);
+    expect(document.body.classList.contains("review-open")).toBe(false);
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("stores only included filters, selects the new preset, and returns to the main view", async () => {
+    await mountPopup([preset("one", "Existing")]);
+    await openSaveReview([
+      filter("Region", ["EMEA", "APAC"]),
+      filter("Empty", []),
+      filter("Department", ["Produce"])
+    ]);
+    const checkboxes = document.querySelectorAll<HTMLInputElement>('.review-filter input[type="checkbox"]');
+    click(checkboxes[1] as Element);
+    const nameInput = document.querySelector<HTMLInputElement>("#save-name");
+    if (!nameInput) {
+      throw new Error("Save name input not found.");
+    }
+    nameInput.value = "  New preset  ";
+
+    click(document.querySelector("#confirm-save") as Element);
+
+    await vi.waitFor(() => {
+      expect(testState.savePreset).toHaveBeenCalledWith(
+        pageKey,
+        expect.objectContaining({
+          id: "00000000-0000-0000-0000-000000000000",
+          name: "New preset",
+          filters: [filter("Region", ["EMEA", "APAC"])]
+        }),
+        { uniqueNormalizedName: "new preset" }
+      );
+      expect(document.querySelector<HTMLSelectElement>("#preset-select")?.value).toBe(
+        "00000000-0000-0000-0000-000000000000"
+      );
+      expect(document.querySelector<HTMLElement>("#save-review-dialog")?.hidden).toBe(true);
+      expect(document.querySelector("#result")?.textContent).toBe("Saved 1 filters.");
+    });
+    expect(document.activeElement).toBe(document.querySelector("#apply-preset"));
+  });
+
+  it("preserves the Save Review draft after storage failure and allows retry", async () => {
+    await mountPopup([]);
+    await openSaveReview([filter("Region", ["EMEA"]), filter("Team", ["North"])]);
+    const nameInput = document.querySelector<HTMLInputElement>("#save-name");
+    const disclosures = document.querySelectorAll<HTMLButtonElement>(".review-filter-disclosure");
+    const checkboxes = document.querySelectorAll<HTMLInputElement>('.review-filter input[type="checkbox"]');
+    if (!nameInput) {
+      throw new Error("Save name input not found.");
+    }
+    nameInput.value = "Retry preset";
+    click(disclosures[0] as Element);
+    click(checkboxes[1] as Element);
+    testState.savePreset.mockRejectedValueOnce(new Error("Storage unavailable."));
+
+    click(document.querySelector("#confirm-save") as Element);
+
+    await vi.waitFor(() => {
+      expect(document.querySelector("#save-storage-error")?.textContent).toBe("Storage unavailable.");
+    });
+    expect(document.querySelector<HTMLElement>("#save-review-dialog")?.hidden).toBe(false);
+    expect(nameInput.value).toBe("Retry preset");
+    expect(checkboxes[1]?.checked).toBe(false);
+    expect(disclosures[0]?.ariaExpanded).toBe("true");
+
+    click(document.querySelector("#confirm-save") as Element);
+    await vi.waitFor(() => {
+      expect(testState.savePreset).toHaveBeenCalledTimes(2);
+      expect(document.querySelector<HTMLElement>("#save-review-dialog")?.hidden).toBe(true);
+    });
+  });
+
+  it("uses required and current-report unique-name validation for Rename", async () => {
+    await mountPopup([preset("one", "One"), preset("two", "Two")]);
+    selectPreset("one");
+    click(document.querySelector("#rename-preset") as Element);
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>("#rename-dialog")?.hidden).toBe(false);
+    });
+    const nameInput = document.querySelector<HTMLInputElement>("#rename-name");
+    if (!nameInput) {
+      throw new Error("Rename name input not found.");
+    }
+
+    nameInput.value = "   ";
+    click(document.querySelector("#confirm-rename") as Element);
+    await vi.waitFor(() => {
+      expect(document.querySelector("#rename-name-error")?.textContent).toBe("Enter a preset name.");
+    });
+
+    nameInput.value = " two ";
+    click(document.querySelector("#confirm-rename") as Element);
+    await vi.waitFor(() => {
+      expect(document.querySelector("#rename-name-error")?.textContent).toBe(
+        "A preset with this name already exists."
+      );
+    });
+
+    nameInput.value = " ONE ";
+    click(document.querySelector("#confirm-rename") as Element);
+    await vi.waitFor(() => {
+      expect(testState.savePreset).toHaveBeenCalledWith(
+        pageKey,
+        expect.objectContaining({ id: "one", name: "ONE" }),
+        { requireExisting: true, uniqueNormalizedName: "one" }
+      );
+      expect(document.querySelector<HTMLSelectElement>("#preset-select")?.value).toBe("one");
+    });
+  });
+
+  it("preserves the Rename dialog input after storage failure", async () => {
+    await mountPopup([preset("one", "One")]);
+    click(document.querySelector("#rename-preset") as Element);
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>("#rename-dialog")?.hidden).toBe(false);
+    });
+    const nameInput = document.querySelector<HTMLInputElement>("#rename-name");
+    if (!nameInput) {
+      throw new Error("Rename name input not found.");
+    }
+    nameInput.value = "Renamed after retry";
+    testState.savePreset.mockRejectedValueOnce(new Error("Storage unavailable."));
+
+    click(document.querySelector("#confirm-rename") as Element);
+
+    await vi.waitFor(() => {
+      expect(document.querySelector("#rename-storage-error")?.textContent).toBe("Storage unavailable.");
+    });
+    expect(document.querySelector<HTMLElement>("#rename-dialog")?.hidden).toBe(false);
+    expect(nameInput.value).toBe("Renamed after retry");
+    expect(document.querySelector<HTMLButtonElement>("#cancel-rename")?.disabled).toBe(false);
+  });
+
+  it("applies only stored filters so omitted filters remain unchanged", async () => {
+    const partialPreset = preset("one", "Partial");
+    partialPreset.filters = [filter("Region", ["EMEA"])];
+    await mountPopup([partialPreset]);
+    testState.sendContentRequestToActiveTab.mockResolvedValueOnce({ ok: true, results: [] });
+
+    click(document.querySelector("#apply-preset") as Element);
+
+    await vi.waitFor(() => {
+      expect(testState.sendContentRequestToActiveTab).toHaveBeenCalledWith({
+        type: "APPLY_FILTERS",
+        filters: [filter("Region", ["EMEA"])]
+      });
+    });
+  });
+
+  it("submits Save and Rename from the name field with Enter", async () => {
+    await mountPopup([preset("one", "One")]);
+    await openSaveReview([filter("Region", ["EMEA"])]);
+    const saveName = document.querySelector<HTMLInputElement>("#save-name");
+    if (!saveName) {
+      throw new Error("Save name input not found.");
+    }
+    saveName.value = "Created with Enter";
+    saveName.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await vi.waitFor(() => {
+      expect(testState.savePreset).toHaveBeenCalledWith(
+        pageKey,
+        expect.objectContaining({ name: "Created with Enter" }),
+        { uniqueNormalizedName: "created with enter" }
+      );
+    });
+
+    selectPreset("one");
+    click(document.querySelector("#rename-preset") as Element);
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>("#rename-dialog")?.hidden).toBe(false);
+    });
+    const renameName = document.querySelector<HTMLInputElement>("#rename-name");
+    if (!renameName) {
+      throw new Error("Rename name input not found.");
+    }
+    renameName.value = "Renamed with Enter";
+    renameName.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await vi.waitFor(() => {
+      expect(testState.savePreset).toHaveBeenCalledWith(
+        pageKey,
+        expect.objectContaining({ id: "one", name: "Renamed with Enter" }),
+        { requireExisting: true, uniqueNormalizedName: "renamed with enter" }
+      );
+    });
+  });
+
+  it("freezes editable Save Review controls while storage is pending and restores them after failure", async () => {
+    let rejectSave: ((error: Error) => void) | undefined;
+    await mountPopup([]);
+    await openSaveReview([filter("Region", ["EMEA"])]);
+    testState.savePreset.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectSave = reject;
+        })
+    );
+    const nameInput = document.querySelector<HTMLInputElement>("#save-name");
+    const checkbox = document.querySelector<HTMLInputElement>('.review-filter input[type="checkbox"]');
+    if (!nameInput || !checkbox) {
+      throw new Error("Save controls not found.");
+    }
+
+    click(document.querySelector("#confirm-save") as Element);
+    await vi.waitFor(() => {
+      expect(nameInput.disabled).toBe(true);
+      expect(checkbox.disabled).toBe(true);
+    });
+    rejectSave?.(new Error("Storage unavailable."));
+    await vi.waitFor(() => {
+      expect(nameInput.disabled).toBe(false);
+      expect(checkbox.disabled).toBe(false);
+    });
+  });
+
+  it("shows an authoritative save name conflict as name validation and restores focus", async () => {
+    await mountPopup([]);
+    await openSaveReview([filter("Region", ["EMEA"])]);
+    const conflict = new Error("A preset with this name already exists.");
+    conflict.name = "PresetNameConflictError";
+    testState.savePreset.mockRejectedValueOnce(conflict);
+
+    click(document.querySelector("#confirm-save") as Element);
+
+    await vi.waitFor(() => {
+      expect(document.querySelector("#save-name-error")?.textContent).toBe(
+        "A preset with this name already exists."
+      );
+      expect(document.activeElement).toBe(document.querySelector("#save-name"));
+    });
+    expect(document.querySelector("#save-storage-error")?.textContent).toBe("");
   });
 });

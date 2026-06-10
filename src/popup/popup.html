@@ -74,7 +74,108 @@
 
   <div class="modal-backdrop" hidden>
     <section
-      class="delete-dialog"
+      id="save-review-dialog"
+      class="popup-dialog save-review-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="save-review-title"
+      tabindex="-1"
+      hidden
+    >
+      <header class="dialog-header">
+        <h2 id="save-review-title">Review filters before saving</h2>
+        <p>Choose the active filters to include in this preset.</p>
+      </header>
+
+      <div class="dialog-field">
+        <label for="save-name">Preset name</label>
+        <input id="save-name" type="text" autocomplete="off" aria-describedby="save-name-error save-storage-error" />
+        <p id="save-name-error" class="field-error" role="alert" hidden></p>
+        <p id="save-storage-error" class="dialog-error" role="alert" hidden></p>
+      </div>
+
+      <div class="review-toolbar">
+        <div>
+          <h3 id="review-filters-title">Filters to save</h3>
+          <p id="review-selection-count" role="status" aria-live="polite"></p>
+        </div>
+        <div class="review-bulk-actions">
+          <button
+            id="select-all-filters"
+            class="icon-button"
+            type="button"
+            aria-label="Select all filters"
+            title="Select all filters"
+            data-tooltip="Select all filters"
+          >
+            <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+              <rect x="4" y="4" width="16" height="16" rx="2"></rect>
+              <path d="m8 12 2.5 2.5L16 9"></path>
+            </svg>
+          </button>
+          <button
+            id="clear-all-filters"
+            class="icon-button"
+            type="button"
+            aria-label="Clear all filters"
+            title="Clear all filters"
+            data-tooltip="Clear all filters"
+          >
+            <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+              <rect x="4" y="4" width="16" height="16" rx="2"></rect>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div
+        id="review-filter-list"
+        class="review-filter-list"
+        role="group"
+        aria-labelledby="review-filters-title"
+      ></div>
+      <p id="review-empty" class="review-empty" hidden>
+        No selected filter values found. Select values in Power BI and try again.
+      </p>
+
+      <div class="review-footer">
+        <p id="review-selection-guidance" role="status" aria-live="polite"></p>
+        <div class="dialog-actions">
+          <button id="cancel-save" class="button-secondary" type="button">Cancel</button>
+          <button id="confirm-save" class="button-primary" type="button">Save preset</button>
+        </div>
+      </div>
+    </section>
+
+    <section
+      id="rename-dialog"
+      class="popup-dialog rename-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="rename-dialog-title"
+      tabindex="-1"
+      hidden
+    >
+      <h2 id="rename-dialog-title">Rename preset</h2>
+      <div class="dialog-field">
+        <label for="rename-name">Preset name</label>
+        <input
+          id="rename-name"
+          type="text"
+          autocomplete="off"
+          aria-describedby="rename-name-error rename-storage-error"
+        />
+        <p id="rename-name-error" class="field-error" role="alert" hidden></p>
+        <p id="rename-storage-error" class="dialog-error" role="alert" hidden></p>
+      </div>
+      <div class="dialog-actions">
+        <button id="cancel-rename" class="button-secondary" type="button">Cancel</button>
+        <button id="confirm-rename" class="button-primary" type="button">Rename</button>
+      </div>
+    </section>
+
+    <section
+      class="popup-dialog delete-dialog"
       role="dialog"
       aria-modal="true"
       aria-labelledby="delete-dialog-title"

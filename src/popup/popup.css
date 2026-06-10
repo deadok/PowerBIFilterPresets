@@ -11,6 +11,19 @@ body {
   background: #f8fafc;
 }
 
+body.review-open {
+  width: 480px;
+  min-width: 0;
+  max-width: 100vw;
+  height: 560px;
+  max-height: 100vh;
+  overflow: hidden;
+}
+
+body.review-open .popup-content {
+  display: none;
+}
+
 .popup-shell {
   position: relative;
 }
@@ -47,7 +60,8 @@ p {
 }
 
 button,
-select {
+select,
+input {
   width: 100%;
   box-sizing: border-box;
   min-height: 38px;
@@ -56,11 +70,16 @@ select {
   font: inherit;
 }
 
-select {
+select,
+input {
   padding: 0 34px 0 10px;
   color: #1f2937;
   background: #fff;
   text-overflow: ellipsis;
+}
+
+input {
+  padding-right: 10px;
 }
 
 button {
@@ -88,7 +107,8 @@ button svg {
 }
 
 button:focus-visible,
-select:focus-visible {
+select:focus-visible,
+input:focus-visible {
   outline: 3px solid #f59e0b;
   outline-offset: 2px;
 }
@@ -244,7 +264,11 @@ select:disabled {
   display: none;
 }
 
-.delete-dialog {
+.modal-backdrop.review-backdrop {
+  padding: 0;
+}
+
+.popup-dialog {
   width: 100%;
   max-height: calc(100vh - 28px);
   box-sizing: border-box;
@@ -254,6 +278,178 @@ select:disabled {
   border-radius: 9px;
   background: #fff;
   box-shadow: 0 12px 28px rgb(15 23 42 / 32%);
+}
+
+.save-review-dialog {
+  width: 100vw;
+  max-width: 480px;
+  height: 100vh;
+  max-height: 560px;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 16px;
+  overflow: hidden;
+}
+
+.save-review-dialog[hidden],
+.rename-dialog[hidden],
+.delete-dialog[hidden] {
+  display: none;
+}
+
+.dialog-header p {
+  margin-top: 5px;
+}
+
+.dialog-field {
+  display: grid;
+  gap: 5px;
+}
+
+.dialog-field label,
+.review-toolbar h3 {
+  color: #334155;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.review-toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.review-toolbar h3 {
+  margin: 0;
+}
+
+.review-bulk-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 40px);
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.review-filter-list {
+  min-height: 72px;
+  padding: 2px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.review-filter {
+  border: 1px solid #dbe3ee;
+  border-radius: 7px;
+  background: #fff;
+}
+
+.review-filter + .review-filter {
+  margin-top: 8px;
+}
+
+.review-filter-row {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px;
+  cursor: pointer;
+}
+
+.review-filter-row input {
+  width: 20px;
+  min-height: 20px;
+  margin: 1px 0 0;
+}
+
+.review-filter-disclosure {
+  width: 24px;
+  min-height: 24px;
+  padding: 2px;
+  color: #334155;
+  background: transparent;
+  border-color: transparent;
+}
+
+.review-filter-disclosure svg {
+  width: 16px;
+  height: 16px;
+  transition: transform 100ms ease;
+}
+
+.review-filter-disclosure[aria-expanded="true"] svg {
+  transform: rotate(90deg);
+}
+
+.review-filter-title {
+  min-width: 0;
+  color: #1f2937;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.review-filter-count {
+  min-width: 24px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: #475569;
+  background: #eef2f7;
+  font-size: 12px;
+  text-align: center;
+}
+
+.review-filter-values {
+  margin: 0 10px 10px 68px;
+  padding: 8px 8px 8px 24px;
+  border-left: 2px solid #bfdbfe;
+  color: #475569;
+  font-size: 12px;
+}
+
+.review-filter-values li {
+  padding: 2px 0;
+  overflow-wrap: anywhere;
+  unicode-bidi: plaintext;
+}
+
+.review-empty {
+  align-self: start;
+  margin: 0;
+  padding: 12px;
+  border: 1px dashed #94a3b8;
+  border-radius: 7px;
+  background: #f8fafc;
+}
+
+.review-footer {
+  display: grid;
+  gap: 8px;
+}
+
+#review-selection-guidance {
+  min-height: 18px;
+  margin: 0;
+  color: #912018;
+}
+
+.field-error {
+  margin: 0;
+  color: #912018;
+}
+
+.rename-dialog {
+  max-width: 380px;
+}
+
+.rename-dialog .dialog-field {
+  margin-top: 12px;
 }
 
 #delete-dialog-description {
@@ -295,11 +491,53 @@ select:disabled {
   border-color: #912018;
 }
 
+@media (max-height: 400px) {
+  .save-review-dialog {
+    gap: 4px;
+    padding: 10px;
+  }
+
+  .dialog-header p {
+    display: none;
+  }
+
+  .save-review-dialog h2 {
+    font-size: 15px;
+    line-height: 1.15;
+  }
+
+  .dialog-field {
+    gap: 2px;
+  }
+
+  .dialog-field input {
+    min-height: 32px;
+  }
+
+  .review-filter-list {
+    min-height: 0;
+  }
+
+  .review-footer {
+    gap: 3px;
+  }
+
+  #review-selection-guidance {
+    min-height: 14px;
+    font-size: 11px;
+  }
+
+  .review-footer .dialog-actions {
+    margin-top: 0;
+  }
+}
+
 @media (forced-colors: active) {
   button,
   select,
+  input,
   #result,
-  .delete-dialog {
+  .popup-dialog {
     border: 1px solid ButtonText;
   }
 
