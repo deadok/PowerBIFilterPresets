@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createPresetStore } from "../../src/shared/presetStore";
+import {
+  PresetNameConflictError,
+  PresetNotFoundError,
+  createPresetStore
+} from "../../src/shared/presetStore";
 import type { PagePresetCollection, Preset } from "../../src/shared/types";
 
 function createFakeStorage() {
@@ -71,5 +75,39 @@ describe("createPresetStore", () => {
     await expect(store.getPageCollection("https://portal/reports/sales")).resolves.toMatchObject({
       presets: []
     });
+  });
+
+  it("serializes same-name creation and rejects the conflicting write", async () => {
+    const storage = createFakeStorage();
+    const store = createPresetStore(storage);
+    const secondPreset = { ...samplePreset, id: "preset_2", name: " sales REVIEW " };
+
+    const results = await Promise.allSettled([
+      store.savePreset("https://portal/reports/sales", samplePreset, { uniqueNormalizedName: "sales review" }),
+      store.savePreset("https://portal/reports/sales", secondPreset, { uniqueNormalizedName: "sales review" })
+    ]);
+
+    expect(results.filter(({ status }) => status === "fulfilled")).toHaveLength(1);
+    const rejected = results.find(({ status }) => status === "rejected");
+    expect(rejected).toMatchObject({ reason: expect.any(PresetNameConflictError) });
+    await expect(store.getPageCollection("https://portal/reports/sales")).resolves.toMatchObject({
+      presets: [expect.objectContaining({ name: "Sales review" })]
+    });
+  });
+
+  it("does not recreate a preset when rename requires an existing id", async () => {
+    const storage = createFakeStorage();
+    const store = createPresetStore(storage);
+    await store.savePreset("https://portal/reports/sales", samplePreset);
+    await store.deletePreset("https://portal/reports/sales", samplePreset.id);
+
+    await expect(
+      store.savePreset(
+        "https://portal/reports/sales",
+        { ...samplePreset, name: "Renamed" },
+        { requireExisting: true, uniqueNormalizedName: "renamed" }
+      )
+    ).rejects.toBeInstanceOf(PresetNotFoundError);
+    await expect(store.getPageCollection("https://portal/reports/sales")).resolves.toMatchObject({ presets: [] });
   });
 });
