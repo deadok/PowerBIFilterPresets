@@ -48,9 +48,9 @@
           id="rename-preset"
           class="icon-button"
           type="button"
-          aria-label="Rename preset"
-          title="Rename preset"
-          data-tooltip="Rename preset"
+          aria-label="Edit preset"
+          title="Edit preset"
+          data-tooltip="Edit preset"
         >
           <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
             <path d="m4 16-.8 4.8L8 20l10.5-10.5-4-4z"></path>
@@ -151,29 +151,77 @@
     </section>
 
     <section
-      id="rename-dialog"
-      class="popup-dialog rename-dialog"
+      id="edit-preset-dialog"
+      class="popup-dialog edit-preset-dialog"
       role="dialog"
       aria-modal="true"
-      aria-labelledby="rename-dialog-title"
+      aria-labelledby="edit-preset-title"
       tabindex="-1"
       hidden
     >
-      <h2 id="rename-dialog-title">Rename preset</h2>
+      <header class="dialog-header">
+        <h2 id="edit-preset-title">Edit preset</h2>
+        <p>Rename the preset or edit its saved filters.</p>
+      </header>
       <div class="dialog-field">
-        <label for="rename-name">Preset name</label>
         <input
-          id="rename-name"
+          id="edit-preset-name"
           type="text"
           autocomplete="off"
-          aria-describedby="rename-name-error rename-storage-error"
+          aria-label="Preset name"
+          aria-describedby="edit-preset-name-error edit-preset-save-error"
         />
-        <p id="rename-name-error" class="field-error" role="alert" hidden></p>
-        <p id="rename-storage-error" class="dialog-error" role="alert" hidden></p>
+        <p id="edit-preset-name-error" class="field-error" role="alert" hidden></p>
       </div>
+
+      <div class="edit-json-toolbar">
+        <p class="edit-json-hint">Only preset.filters can be edited here.</p>
+        <div class="edit-json-actions">
+          <button id="format-edit-preset-json" class="button-secondary edit-json-action" type="button">Format</button>
+          <button id="reset-edit-preset-json" class="button-secondary edit-json-action" type="button">
+            Reset
+          </button>
+        </div>
+      </div>
+
+      <div class="edit-json-editor">
+        <textarea
+          id="edit-preset-json"
+          spellcheck="false"
+          autocapitalize="off"
+          autocomplete="off"
+          autocorrect="off"
+          aria-label="Preset JSON"
+          aria-describedby="edit-preset-validation edit-preset-save-error"
+        ></textarea>
+      </div>
+
+      <p id="edit-preset-validation" class="edit-preset-validation" role="status" aria-live="polite"></p>
+      <p id="edit-preset-save-error" class="dialog-error" role="alert" hidden></p>
+
+      <div class="dialog-actions edit-preset-footer">
+        <button id="cancel-edit-preset" class="button-secondary" type="button">Cancel</button>
+        <button id="confirm-edit-preset" class="button-primary" type="button">Save changes</button>
+      </div>
+    </section>
+
+    <section
+      id="reset-edit-preset-dialog"
+      class="popup-dialog reset-edit-preset-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="reset-edit-preset-title"
+      aria-describedby="reset-edit-preset-description"
+      tabindex="-1"
+      hidden
+    >
+      <h2 id="reset-edit-preset-title">Discard JSON changes?</h2>
+      <p id="reset-edit-preset-description">
+        Resetting will restore the JSON from when you opened the editor and keep the current preset name.
+      </p>
       <div class="dialog-actions">
-        <button id="cancel-rename" class="button-secondary" type="button">Cancel</button>
-        <button id="confirm-rename" class="button-primary" type="button">Rename</button>
+        <button id="cancel-reset-edit-preset" class="button-secondary" type="button">Cancel</button>
+        <button id="confirm-reset-edit-preset" class="button-primary" type="button">Reset</button>
       </div>
     </section>
 

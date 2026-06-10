@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   PresetNameConflictError,
   PresetNotFoundError,
+  PresetRevisionConflictError,
   createPresetStore
 } from "../../src/shared/presetStore";
+import { createPresetRevision } from "../../src/shared/presetRevision";
 import type { PagePresetCollection, Preset } from "../../src/shared/types";
 
 function createFakeStorage() {
@@ -109,5 +111,30 @@ describe("createPresetStore", () => {
       )
     ).rejects.toBeInstanceOf(PresetNotFoundError);
     await expect(store.getPageCollection("https://portal/reports/sales")).resolves.toMatchObject({ presets: [] });
+  });
+
+  it("rejects stale revision writes without changing the stored preset", async () => {
+    const storage = createFakeStorage();
+    const store = createPresetStore(storage);
+    await store.savePreset("https://portal/reports/sales", samplePreset);
+    const revision = createPresetRevision(samplePreset);
+    const changedPreset = { ...samplePreset, name: "Changed elsewhere", updatedAt: "2026-05-28T10:05:00.000Z" };
+    await store.savePreset("https://portal/reports/sales", changedPreset, { requireExisting: true });
+
+    await expect(
+      store.savePreset(
+        "https://portal/reports/sales",
+        { ...samplePreset, name: "Edited locally", updatedAt: "2026-05-28T10:10:00.000Z" },
+        {
+          requireExisting: true,
+          expectedRevision: revision,
+          uniqueNormalizedName: "edited locally"
+        }
+      )
+    ).rejects.toBeInstanceOf(PresetRevisionConflictError);
+
+    await expect(store.getPageCollection("https://portal/reports/sales")).resolves.toMatchObject({
+      presets: [expect.objectContaining({ name: "Changed elsewhere" })]
+    });
   });
 });

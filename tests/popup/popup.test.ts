@@ -90,6 +90,14 @@ function deleteButton(): HTMLButtonElement {
   return button;
 }
 
+function editButton(): HTMLButtonElement {
+  const button = document.querySelector<HTMLButtonElement>("#rename-preset");
+  if (!button) {
+    throw new Error("Edit button not found.");
+  }
+  return button;
+}
+
 function confirmDeleteButton(): HTMLButtonElement {
   const button = document.querySelector<HTMLButtonElement>("#confirm-delete");
   if (!button) {
@@ -164,8 +172,8 @@ describe("popup", () => {
       title: "Copy preset JSON"
     });
     expect(document.querySelector("#rename-preset")).toMatchObject({
-      ariaLabel: "Rename preset",
-      title: "Rename preset"
+      ariaLabel: "Edit preset",
+      title: "Edit preset"
     });
     expect(document.querySelector("#delete-preset")).toMatchObject({
       ariaLabel: "Delete preset",
@@ -347,25 +355,122 @@ describe("popup", () => {
       expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining('"name": "Sales review"'));
     });
 
-    click(document.querySelector("#rename-preset") as Element);
+    click(editButton());
     await vi.waitFor(() => {
-      expect(document.querySelector<HTMLElement>("#rename-dialog")?.hidden).toBe(false);
+      expect(document.querySelector<HTMLElement>("#edit-preset-dialog")?.hidden).toBe(false);
     });
-    const nameInput = document.querySelector<HTMLInputElement>("#rename-name");
+    const nameInput = document.querySelector<HTMLInputElement>("#edit-preset-name");
     if (!nameInput) {
-      throw new Error("Rename input not found.");
+      throw new Error("Edit name input not found.");
     }
     nameInput.value = "Renamed preset";
     nameInput.dispatchEvent(new Event("input", { bubbles: true }));
-    click(document.querySelector("#confirm-rename") as Element);
+    click(document.querySelector("#confirm-edit-preset") as Element);
 
     await vi.waitFor(() => {
       expect(testState.savePreset).toHaveBeenCalledWith(
         pageKey,
-        expect.objectContaining({ id: "one", name: "Renamed preset" }),
-        { requireExisting: true, uniqueNormalizedName: "renamed preset" }
+        expect.objectContaining({
+          id: "one",
+          name: "Renamed preset",
+          createdAt: "2026-06-09T10:00:00.000Z"
+        }),
+        expect.objectContaining({ requireExisting: true, uniqueNormalizedName: "renamed preset" })
       );
-      expect(document.querySelector("#result")?.textContent).toBe("Preset renamed.");
+      expect(document.querySelector("#result")?.textContent).toBe("Preset updated.");
+    });
+  });
+
+  it("opens Edit preset with the selected preset name and complete export JSON", async () => {
+    await mountPopup([preset("one", "Sales review")]);
+
+    click(editButton());
+
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>("#edit-preset-dialog")?.hidden).toBe(false);
+    });
+    expect(document.querySelector("#edit-preset-title")?.textContent).toBe("Edit preset");
+    expect(document.querySelector<HTMLInputElement>("#edit-preset-name")?.value).toBe("Sales review");
+    expect(JSON.parse(document.querySelector<HTMLTextAreaElement>("#edit-preset-json")?.value ?? "")).toEqual({
+      schemaVersion: 1,
+      preset: preset("one", "Sales review")
+    });
+  });
+
+  it("synchronizes the name field into valid JSON and rejects direct JSON name edits", async () => {
+    await mountPopup([preset("one", "Sales review")]);
+    click(editButton());
+
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>("#edit-preset-dialog")?.hidden).toBe(false);
+    });
+    const nameInput = document.querySelector<HTMLInputElement>("#edit-preset-name");
+    const jsonInput = document.querySelector<HTMLTextAreaElement>("#edit-preset-json");
+    if (!nameInput || !jsonInput) {
+      throw new Error("Edit controls not found.");
+    }
+
+    nameInput.value = "План продаж";
+    nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+
+    await vi.waitFor(() => {
+      expect(JSON.parse(jsonInput.value)).toMatchObject({
+        preset: {
+          name: "План продаж"
+        }
+      });
+    });
+
+    jsonInput.value = jsonInput.value.replace("План продаж", "Edited in JSON");
+    jsonInput.dispatchEvent(new Event("input", { bubbles: true }));
+    await vi.waitFor(() => {
+      expect(document.querySelector("#edit-preset-validation")?.textContent).toBe(
+        "Edit the preset name using the name field."
+      );
+    });
+  });
+
+  it("formats valid JSON and confirms before resetting dirty JSON", async () => {
+    await mountPopup([preset("one", "Sales review")]);
+    click(editButton());
+
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>("#edit-preset-dialog")?.hidden).toBe(false);
+    });
+    const jsonInput = document.querySelector<HTMLTextAreaElement>("#edit-preset-json");
+    if (!jsonInput) {
+      throw new Error("Edit JSON input not found.");
+    }
+
+    jsonInput.value =
+      '{"schemaVersion":1,"preset":{"id":"one","name":"Sales review","createdAt":"2026-06-09T10:00:00.000Z","updatedAt":"2026-06-09T10:00:00.000Z","filters":[{"title":"Region","type":"list","selectedLabels":["EMEA","APAC"]}]}}';
+    jsonInput.dispatchEvent(new Event("input", { bubbles: true }));
+    click(document.querySelector("#format-edit-preset-json") as Element);
+    await vi.waitFor(() => {
+      expect(jsonInput.value).toContain('\n  "schemaVersion": 1,');
+    });
+
+    jsonInput.value = jsonInput.value.replace('"EMEA"', '"West"');
+    jsonInput.dispatchEvent(new Event("input", { bubbles: true }));
+    click(document.querySelector("#reset-edit-preset-json") as Element);
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>("#reset-edit-preset-dialog")?.hidden).toBe(false);
+      expect(document.activeElement).toBe(document.querySelector("#cancel-reset-edit-preset"));
+    });
+    click(document.querySelector("#cancel-reset-edit-preset") as Element);
+    expect(jsonInput.value).toContain('"West"');
+    click(document.querySelector("#reset-edit-preset-json") as Element);
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>("#reset-edit-preset-dialog")?.hidden).toBe(false);
+    });
+    click(document.querySelector("#confirm-reset-edit-preset") as Element);
+    await vi.waitFor(() => {
+      expect(JSON.parse(jsonInput.value)).toMatchObject({
+        preset: {
+          name: "Sales review",
+          filters: [{ title: "Region", type: "list", selectedLabels: ["EMEA"] }]
+        }
+      });
     });
   });
 
@@ -628,65 +733,150 @@ describe("popup", () => {
     });
   });
 
-  it("uses required and current-report unique-name validation for Rename", async () => {
+  it("uses required and current-report unique-name validation for Edit preset", async () => {
     await mountPopup([preset("one", "One"), preset("two", "Two")]);
     selectPreset("one");
     click(document.querySelector("#rename-preset") as Element);
     await vi.waitFor(() => {
-      expect(document.querySelector<HTMLElement>("#rename-dialog")?.hidden).toBe(false);
+      expect(document.querySelector<HTMLElement>("#edit-preset-dialog")?.hidden).toBe(false);
     });
-    const nameInput = document.querySelector<HTMLInputElement>("#rename-name");
+    const nameInput = document.querySelector<HTMLInputElement>("#edit-preset-name");
     if (!nameInput) {
-      throw new Error("Rename name input not found.");
+      throw new Error("Edit name input not found.");
     }
 
     nameInput.value = "   ";
-    click(document.querySelector("#confirm-rename") as Element);
+    click(document.querySelector("#confirm-edit-preset") as Element);
     await vi.waitFor(() => {
-      expect(document.querySelector("#rename-name-error")?.textContent).toBe("Enter a preset name.");
+      expect(document.querySelector("#edit-preset-name-error")?.textContent).toBe("Enter a preset name.");
     });
 
     nameInput.value = " two ";
-    click(document.querySelector("#confirm-rename") as Element);
+    nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+    click(document.querySelector("#confirm-edit-preset") as Element);
     await vi.waitFor(() => {
-      expect(document.querySelector("#rename-name-error")?.textContent).toBe(
+      expect(document.querySelector("#edit-preset-name-error")?.textContent).toBe(
         "A preset with this name already exists."
       );
     });
 
     nameInput.value = " ONE ";
-    click(document.querySelector("#confirm-rename") as Element);
+    nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+    click(document.querySelector("#confirm-edit-preset") as Element);
     await vi.waitFor(() => {
       expect(testState.savePreset).toHaveBeenCalledWith(
         pageKey,
         expect.objectContaining({ id: "one", name: "ONE" }),
-        { requireExisting: true, uniqueNormalizedName: "one" }
+        expect.objectContaining({ requireExisting: true, uniqueNormalizedName: "one" })
       );
       expect(document.querySelector<HTMLSelectElement>("#preset-select")?.value).toBe("one");
     });
   });
 
-  it("preserves the Rename dialog input after storage failure", async () => {
+  it("preserves the Edit preset input after storage failure", async () => {
     await mountPopup([preset("one", "One")]);
     click(document.querySelector("#rename-preset") as Element);
     await vi.waitFor(() => {
-      expect(document.querySelector<HTMLElement>("#rename-dialog")?.hidden).toBe(false);
+      expect(document.querySelector<HTMLElement>("#edit-preset-dialog")?.hidden).toBe(false);
     });
-    const nameInput = document.querySelector<HTMLInputElement>("#rename-name");
+    const nameInput = document.querySelector<HTMLInputElement>("#edit-preset-name");
     if (!nameInput) {
-      throw new Error("Rename name input not found.");
+      throw new Error("Edit name input not found.");
     }
     nameInput.value = "Renamed after retry";
+    nameInput.dispatchEvent(new Event("input", { bubbles: true }));
     testState.savePreset.mockRejectedValueOnce(new Error("Storage unavailable."));
 
-    click(document.querySelector("#confirm-rename") as Element);
+    click(document.querySelector("#confirm-edit-preset") as Element);
 
     await vi.waitFor(() => {
-      expect(document.querySelector("#rename-storage-error")?.textContent).toBe("Storage unavailable.");
+      expect(document.querySelector("#edit-preset-save-error")?.textContent).toBe("Storage unavailable.");
     });
-    expect(document.querySelector<HTMLElement>("#rename-dialog")?.hidden).toBe(false);
+    expect(document.querySelector<HTMLElement>("#edit-preset-dialog")?.hidden).toBe(false);
     expect(nameInput.value).toBe("Renamed after retry");
-    expect(document.querySelector<HTMLButtonElement>("#cancel-rename")?.disabled).toBe(false);
+    expect(document.querySelector<HTMLButtonElement>("#cancel-edit-preset")?.disabled).toBe(false);
+  });
+
+  it("blocks save when the preset changed elsewhere and keeps the draft", async () => {
+    await mountPopup([preset("one", "One")]);
+    click(document.querySelector("#rename-preset") as Element);
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>("#edit-preset-dialog")?.hidden).toBe(false);
+    });
+    const nameInput = document.querySelector<HTMLInputElement>("#edit-preset-name");
+    const jsonInput = document.querySelector<HTMLTextAreaElement>("#edit-preset-json");
+    if (!nameInput || !jsonInput) {
+      throw new Error("Edit controls not found.");
+    }
+    nameInput.value = "Updated after stale";
+    nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+    jsonInput.value = jsonInput.value.replace('"EMEA"', '"North"');
+    jsonInput.dispatchEvent(new Event("input", { bubbles: true }));
+    await vi.waitFor(() => {
+      expect(document.querySelector("#edit-preset-validation")?.textContent).toBe("JSON is valid.");
+    });
+    testState.savePreset.mockRejectedValueOnce(
+      new Error("This preset changed while you were editing it. Close the editor and reopen the preset before saving.")
+    );
+
+    click(document.querySelector("#confirm-edit-preset") as Element);
+
+    await vi.waitFor(() => {
+      expect(document.querySelector("#edit-preset-save-error")?.textContent).toContain("changed while you were editing");
+    });
+    expect(document.querySelector<HTMLElement>("#edit-preset-dialog")?.hidden).toBe(false);
+    expect(nameInput.value).toBe("Updated after stale");
+    expect(jsonInput.value).toContain('"North"');
+  });
+
+  it("blocks save when the preset was deleted elsewhere and keeps the draft", async () => {
+    await mountPopup([preset("one", "One")]);
+    click(document.querySelector("#rename-preset") as Element);
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>("#edit-preset-dialog")?.hidden).toBe(false);
+    });
+    const nameInput = document.querySelector<HTMLInputElement>("#edit-preset-name");
+    if (!nameInput) {
+      throw new Error("Edit name input not found.");
+    }
+    nameInput.value = "Updated after delete";
+    nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+    testState.savePreset.mockRejectedValueOnce(new Error("The selected preset no longer exists."));
+
+    click(document.querySelector("#confirm-edit-preset") as Element);
+
+    await vi.waitFor(() => {
+      expect(document.querySelector("#edit-preset-save-error")?.textContent).toBe(
+        "The selected preset no longer exists."
+      );
+    });
+    expect(document.querySelector<HTMLElement>("#edit-preset-dialog")?.hidden).toBe(false);
+    expect(nameInput.value).toBe("Updated after delete");
+  });
+
+  it("ignores stale debounced validation callbacks after close and reopen", async () => {
+    vi.useFakeTimers();
+    await mountPopup([preset("one", "One")]);
+    click(document.querySelector("#rename-preset") as Element);
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>("#edit-preset-dialog")?.hidden).toBe(false);
+    });
+    const jsonInput = document.querySelector<HTMLTextAreaElement>("#edit-preset-json");
+    if (!jsonInput) {
+      throw new Error("Edit JSON input not found.");
+    }
+    jsonInput.value = "{";
+    jsonInput.dispatchEvent(new Event("input", { bubbles: true }));
+    click(document.querySelector("#cancel-edit-preset") as Element);
+    click(document.querySelector("#rename-preset") as Element);
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>("#edit-preset-dialog")?.hidden).toBe(false);
+    });
+
+    await vi.advanceTimersByTimeAsync(300);
+
+    expect(document.querySelector("#edit-preset-validation")?.textContent).toBe("JSON is valid.");
+    vi.useRealTimers();
   });
 
   it("applies only stored filters so omitted filters remain unchanged", async () => {
@@ -705,7 +895,7 @@ describe("popup", () => {
     });
   });
 
-  it("submits Save and Rename from the name field with Enter", async () => {
+  it("submits Save and Edit preset from the name field with Enter", async () => {
     await mountPopup([preset("one", "One")]);
     await openSaveReview([filter("Region", ["EMEA"])]);
     const saveName = document.querySelector<HTMLInputElement>("#save-name");
@@ -725,19 +915,20 @@ describe("popup", () => {
     selectPreset("one");
     click(document.querySelector("#rename-preset") as Element);
     await vi.waitFor(() => {
-      expect(document.querySelector<HTMLElement>("#rename-dialog")?.hidden).toBe(false);
+      expect(document.querySelector<HTMLElement>("#edit-preset-dialog")?.hidden).toBe(false);
     });
-    const renameName = document.querySelector<HTMLInputElement>("#rename-name");
+    const renameName = document.querySelector<HTMLInputElement>("#edit-preset-name");
     if (!renameName) {
-      throw new Error("Rename name input not found.");
+      throw new Error("Edit name input not found.");
     }
     renameName.value = "Renamed with Enter";
+    renameName.dispatchEvent(new Event("input", { bubbles: true }));
     renameName.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     await vi.waitFor(() => {
       expect(testState.savePreset).toHaveBeenCalledWith(
         pageKey,
         expect.objectContaining({ id: "one", name: "Renamed with Enter" }),
-        { requireExisting: true, uniqueNormalizedName: "renamed with enter" }
+        expect.objectContaining({ requireExisting: true, uniqueNormalizedName: "renamed with enter" })
       );
     });
   });
