@@ -8,13 +8,28 @@
       </div>
     </header>
 
-    <button id="save-current" class="button-secondary button-with-icon" type="button">
-      <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
-        <path d="M5 3h12l2 2v16H5z"></path>
-        <path d="M8 3v6h8V3M8 21v-8h8v8"></path>
-      </svg>
-      <span>Save current filters</span>
-    </button>
+    <div class="create-preset-actions">
+      <button id="save-current" class="button-secondary button-with-icon" type="button">
+        <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+          <path d="M5 3h12l2 2v16H5z"></path>
+          <path d="M8 3v6h8V3M8 21v-8h8v8"></path>
+        </svg>
+        <span>Save current filters</span>
+      </button>
+
+      <button
+        id="create-preset"
+        class="icon-button create-preset-button"
+        type="button"
+        aria-label="New preset"
+        title="New preset"
+        data-tooltip="New preset"
+      >
+        <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+          <path d="M12 5v14M5 12h14"></path>
+        </svg>
+      </button>
+    </div>
 
     <hr class="popup-separator" aria-hidden="true" />
 
@@ -151,6 +166,65 @@
     </section>
 
     <section
+      id="create-preset-dialog"
+      class="popup-dialog edit-preset-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="create-preset-title"
+      tabindex="-1"
+      hidden
+    >
+      <header class="dialog-header">
+        <h2 id="create-preset-title">New preset</h2>
+        <p>Create a preset manually or paste shared preset JSON.</p>
+      </header>
+      <div class="dialog-field">
+        <label for="create-preset-name">Preset name</label>
+        <input
+          id="create-preset-name"
+          type="text"
+          autocomplete="off"
+          aria-describedby="create-preset-name-error create-preset-save-error"
+        />
+        <p id="create-preset-name-error" class="field-error" role="alert" hidden></p>
+      </div>
+
+      <div class="edit-json-toolbar">
+        <div>
+          <h3 id="create-preset-json-title">Preset JSON</h3>
+          <p class="edit-json-hint">Paste shared JSON or add at least one filter.</p>
+        </div>
+        <div class="edit-json-actions">
+          <button id="paste-create-preset-json" class="button-secondary edit-json-action" type="button">
+            Paste JSON
+          </button>
+          <button id="format-create-preset-json" class="button-secondary edit-json-action" type="button">Format</button>
+          <button id="reset-create-preset-json" class="button-secondary edit-json-action" type="button">Reset</button>
+        </div>
+      </div>
+
+      <div class="edit-json-editor">
+        <textarea
+          id="create-preset-json"
+          spellcheck="false"
+          autocapitalize="off"
+          autocomplete="off"
+          autocorrect="off"
+          aria-labelledby="create-preset-json-title"
+          aria-describedby="create-preset-validation create-preset-save-error"
+        ></textarea>
+      </div>
+
+      <p id="create-preset-validation" class="edit-preset-validation" role="status" aria-live="polite"></p>
+      <p id="create-preset-save-error" class="dialog-error" role="alert" hidden></p>
+
+      <div class="dialog-actions edit-preset-footer">
+        <button id="cancel-create-preset" class="button-secondary" type="button">Cancel</button>
+        <button id="confirm-create-preset" class="button-primary" type="button">Create preset</button>
+      </div>
+    </section>
+
+    <section
       id="edit-preset-dialog"
       class="popup-dialog edit-preset-dialog"
       role="dialog"
@@ -202,6 +276,26 @@
       <div class="dialog-actions edit-preset-footer">
         <button id="cancel-edit-preset" class="button-secondary" type="button">Cancel</button>
         <button id="confirm-edit-preset" class="button-primary" type="button">Save changes</button>
+      </div>
+    </section>
+
+    <section
+      id="reset-create-preset-dialog"
+      class="popup-dialog reset-edit-preset-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="reset-create-preset-title"
+      aria-describedby="reset-create-preset-description"
+      tabindex="-1"
+      hidden
+    >
+      <h2 id="reset-create-preset-title">Discard JSON changes?</h2>
+      <p id="reset-create-preset-description">
+        Resetting will restore the initial create template, clear the preset name, and discard unsaved JSON changes.
+      </p>
+      <div class="dialog-actions">
+        <button id="cancel-reset-create-preset" class="button-secondary" type="button">Cancel</button>
+        <button id="confirm-reset-create-preset" class="button-primary" type="button">Reset</button>
       </div>
     </section>
 

@@ -3,12 +3,12 @@ import type { FilterPresetItem, Preset } from "./types";
 
 type JsonObject = Record<string, unknown>;
 
-export type EditPresetJsonError = {
+type PresetJsonError = {
   message: string;
   path?: string;
 };
 
-export type EditPresetJsonSuccess = {
+type PresetJsonSuccess = {
   valid: true;
   filters: FilterPresetItem[];
   normalizedPreset: Preset;
@@ -16,12 +16,25 @@ export type EditPresetJsonSuccess = {
   formattedText: string;
 };
 
-export type EditPresetJsonFailure = {
+type PresetJsonFailure = {
   valid: false;
-  error: EditPresetJsonError;
+  error: PresetJsonError;
 };
 
-export type EditPresetJsonResult = EditPresetJsonSuccess | EditPresetJsonFailure;
+type ControlledPresetJsonOptions = {
+  controlledPreset: Preset;
+  authoritativeName: string;
+  allowNameMismatch?: boolean;
+};
+
+export type EditPresetJsonError = PresetJsonError;
+export type EditPresetJsonSuccess = PresetJsonSuccess;
+export type EditPresetJsonFailure = PresetJsonFailure;
+export type EditPresetJsonResult = PresetJsonSuccess | PresetJsonFailure;
+
+export type CreatePresetJsonSuccess = PresetJsonSuccess;
+export type CreatePresetJsonFailure = PresetJsonFailure;
+export type CreatePresetJsonResult = PresetJsonSuccess | PresetJsonFailure;
 
 export type ValidateEditPresetJsonOptions = {
   preset: Preset;
@@ -29,13 +42,47 @@ export type ValidateEditPresetJsonOptions = {
   allowNameMismatch?: boolean;
 };
 
+export type ValidateCreatePresetJsonOptions = {
+  provisionalPreset: Preset;
+  authoritativeName: string;
+  allowNameMismatch?: boolean;
+};
+
+export type CreatePresetDocumentOptions = Pick<Preset, "id" | "createdAt" | "updatedAt"> &
+  Partial<Pick<Preset, "name" | "filters">>;
+
+export type SanitizedImportedPresetDocument =
+  | {
+      valid: true;
+      text: string;
+      adoptedName: string;
+    }
+  | PresetJsonFailure;
+
 export function createEditPresetDocument(preset: Preset): string {
   return serializePresetExport(preset);
+}
+
+export function createCreatePresetDocument(options: CreatePresetDocumentOptions): string {
+  return serializePresetExport({
+    id: options.id,
+    name: options.name ?? "",
+    createdAt: options.createdAt,
+    updatedAt: options.updatedAt,
+    filters: options.filters ?? []
+  });
 }
 
 export function resetEditPresetJson(preset: Preset, authoritativeName: string): string {
   return serializePresetExport({
     ...preset,
+    name: authoritativeName
+  });
+}
+
+export function resetCreatePresetJson(provisionalPreset: Preset, authoritativeName: string): string {
+  return serializePresetExport({
+    ...provisionalPreset,
     name: authoritativeName
   });
 }
@@ -49,7 +96,59 @@ export function formatEditPresetJson(text: string, options: ValidateEditPresetJs
   return validation.formattedText;
 }
 
+export function formatCreatePresetJson(text: string, options: ValidateCreatePresetJsonOptions): string {
+  const validation = validateCreatePresetJson(text, options);
+  if (!validation.valid) {
+    throw new Error(validation.error.message);
+  }
+
+  return validation.formattedText;
+}
+
 export function validateEditPresetJson(text: string, options: ValidateEditPresetJsonOptions): EditPresetJsonResult {
+  return validateControlledPresetJson(text, {
+    controlledPreset: options.preset,
+    authoritativeName: options.authoritativeName,
+    allowNameMismatch: options.allowNameMismatch
+  });
+}
+
+export function validateCreatePresetJson(text: string, options: ValidateCreatePresetJsonOptions): CreatePresetJsonResult {
+  return validateControlledPresetJson(text, {
+    controlledPreset: options.provisionalPreset,
+    authoritativeName: options.authoritativeName,
+    allowNameMismatch: options.allowNameMismatch
+  });
+}
+
+export function sanitizeImportedPresetDocument(
+  text: string,
+  options: { provisionalPreset: Preset }
+): SanitizedImportedPresetDocument {
+  const parsedResult = parseJson(text);
+  if (!parsedResult.valid) {
+    return parsedResult;
+  }
+
+  const root = expectObject(parsedResult.value, undefined, "Preset JSON must be an object.");
+  if (!root.valid) {
+    return root;
+  }
+
+  if (!Object.hasOwn(root.value, "schemaVersion") || !Object.hasOwn(root.value, "preset")) {
+    return invalid("Paste a complete preset JSON document.", "preset");
+  }
+
+  const adoptedName = readImportedName(root.value.preset);
+  const sanitizedDocument = sanitizeImportedRoot(root.value, options.provisionalPreset, adoptedName);
+  return {
+    valid: true,
+    adoptedName,
+    text: JSON.stringify(sanitizedDocument, null, 2)
+  };
+}
+
+function validateControlledPresetJson(text: string, options: ControlledPresetJsonOptions): PresetJsonSuccess | PresetJsonFailure {
   const parsedResult = parseJson(text);
   if (!parsedResult.valid) {
     return parsedResult;
@@ -71,13 +170,13 @@ export function validateEditPresetJson(text: string, options: ValidateEditPreset
   }
 
   const preset = presetResult.value;
-  const originalPreset = options.preset;
+  const controlledPreset = options.controlledPreset;
 
   const id = expectString(preset.id, "preset.id");
   if (!id.valid) {
     return id;
   }
-  if (id.value !== originalPreset.id) {
+  if (id.value !== controlledPreset.id) {
     return invalid("preset.id cannot be edited.", "preset.id");
   }
 
@@ -93,7 +192,7 @@ export function validateEditPresetJson(text: string, options: ValidateEditPreset
   if (!createdAt.valid) {
     return createdAt;
   }
-  if (createdAt.value !== originalPreset.createdAt) {
+  if (createdAt.value !== controlledPreset.createdAt) {
     return invalid("preset.createdAt cannot be edited.", "preset.createdAt");
   }
 
@@ -101,23 +200,47 @@ export function validateEditPresetJson(text: string, options: ValidateEditPreset
   if (!updatedAt.valid) {
     return updatedAt;
   }
-  if (updatedAt.value !== originalPreset.updatedAt) {
+  if (updatedAt.value !== controlledPreset.updatedAt) {
     return invalid("preset.updatedAt cannot be edited.", "preset.updatedAt");
   }
 
-  if (!Array.isArray(preset.filters)) {
+  const filters = validateFilters(preset.filters);
+  if (!filters.valid) {
+    return filters;
+  }
+
+  const normalizedPreset: Preset = {
+    id: controlledPreset.id,
+    name: options.authoritativeName,
+    createdAt: controlledPreset.createdAt,
+    updatedAt: controlledPreset.updatedAt,
+    filters: filters.filters
+  };
+
+  const formattedText = serializePresetExport(normalizedPreset);
+  return {
+    valid: true,
+    filters: filters.filters,
+    normalizedPreset,
+    synchronizedText: formattedText,
+    formattedText
+  };
+}
+
+function validateFilters(value: unknown): { valid: true; filters: FilterPresetItem[] } | PresetJsonFailure {
+  if (!Array.isArray(value)) {
     return invalid("preset.filters must be an array.", "preset.filters");
   }
-  if (preset.filters.length === 0) {
+  if (value.length === 0) {
     return invalid("preset.filters: Add at least one filter.", "preset.filters");
   }
 
   const filters: FilterPresetItem[] = [];
-  const seenTitles = new Map<string, number>();
+  const seenTitles = new Set<string>();
 
-  for (const [filterIndex, value] of preset.filters.entries()) {
+  for (const [filterIndex, filterValue] of value.entries()) {
     const filterPath = `preset.filters[${filterIndex}]`;
-    const filter = expectObject(value, filterPath, `${filterPath} must be an object.`);
+    const filter = expectObject(filterValue, filterPath, `${filterPath} must be an object.`);
     if (!filter.valid) {
       return filter;
     }
@@ -126,8 +249,12 @@ export function validateEditPresetJson(text: string, options: ValidateEditPreset
     if (!title.valid) {
       return title;
     }
-    if (normalizeComparable(title.value).length === 0) {
+    const normalizedTitle = normalizeComparable(title.value);
+    if (normalizedTitle.length === 0) {
       return invalid(`${filterPath}.title: Enter a filter title.`, `${filterPath}.title`);
+    }
+    if (seenTitles.has(normalizedTitle)) {
+      return invalid(`${filterPath}.title: Duplicate filter title.`, `${filterPath}.title`);
     }
 
     const type = expectString(filter.value.type, `${filterPath}.type`);
@@ -166,12 +293,7 @@ export function validateEditPresetJson(text: string, options: ValidateEditPreset
       selectedLabels.push(label.value);
     }
 
-    const normalizedTitle = normalizeComparable(title.value);
-    if (seenTitles.has(normalizedTitle)) {
-      return invalid(`${filterPath}.title: Duplicate filter title.`, `${filterPath}.title`);
-    }
-    seenTitles.set(normalizedTitle, filterIndex);
-
+    seenTitles.add(normalizedTitle);
     filters.push({
       title: title.value,
       type: "list",
@@ -179,25 +301,41 @@ export function validateEditPresetJson(text: string, options: ValidateEditPreset
     });
   }
 
-  const normalizedPreset: Preset = {
-    id: originalPreset.id,
-    name: options.authoritativeName,
-    createdAt: originalPreset.createdAt,
-    updatedAt: originalPreset.updatedAt,
-    filters
-  };
-
-  const formattedText = serializePresetExport(normalizedPreset);
   return {
     valid: true,
-    filters,
-    normalizedPreset,
-    synchronizedText: formattedText,
-    formattedText
+    filters
   };
 }
 
-function parseJson(text: string): { valid: true; value: unknown } | EditPresetJsonFailure {
+function sanitizeImportedRoot(root: JsonObject, provisionalPreset: Preset, adoptedName: string): JsonObject {
+  const sanitizedRoot: JsonObject = {
+    ...root
+  };
+
+  if (!isPlainObject(root.preset)) {
+    return sanitizedRoot;
+  }
+
+  sanitizedRoot.preset = {
+    ...root.preset,
+    id: provisionalPreset.id,
+    name: adoptedName,
+    createdAt: provisionalPreset.createdAt,
+    updatedAt: provisionalPreset.updatedAt
+  };
+
+  return sanitizedRoot;
+}
+
+function readImportedName(value: unknown): string {
+  if (!isPlainObject(value) || typeof value.name !== "string") {
+    return "";
+  }
+
+  return value.name;
+}
+
+function parseJson(text: string): { valid: true; value: unknown } | PresetJsonFailure {
   try {
     return {
       valid: true,
@@ -212,33 +350,37 @@ function expectObject(
   value: unknown,
   path: string | undefined,
   message: string
-): { valid: true; value: JsonObject } | EditPresetJsonFailure {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+): { valid: true; value: JsonObject } | PresetJsonFailure {
+  if (!isPlainObject(value)) {
     return invalid(message, path);
   }
 
   return {
-    valid: true as const,
-    value: value as JsonObject
+    valid: true,
+    value
   };
 }
 
-function expectString(value: unknown, path: string) {
+function expectString(value: unknown, path: string): { valid: true; value: string } | PresetJsonFailure {
   if (typeof value !== "string") {
     return invalid(`${path} must be a string.`, path);
   }
 
   return {
-    valid: true as const,
+    valid: true,
     value
   };
+}
+
+function isPlainObject(value: unknown): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function normalizeComparable(value: string): string {
   return value.trim().toLocaleLowerCase();
 }
 
-function invalid(message: string, path?: string): EditPresetJsonFailure {
+function invalid(message: string, path?: string): PresetJsonFailure {
   return {
     valid: false,
     error: {

@@ -202,6 +202,13 @@ select:disabled {
   min-width: 0;
 }
 
+.create-preset-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
+  gap: 8px;
+  align-items: stretch;
+}
+
 .selected-preset label {
   color: #334155;
   font-size: 13px;
@@ -233,6 +240,10 @@ select:disabled {
   color: #334155;
   background: #fff;
   border-color: #94a3b8;
+}
+
+.create-preset-button {
+  min-width: 40px;
 }
 
 .icon-button:not(:disabled):hover {
@@ -575,7 +586,8 @@ select:disabled {
   background: #101828;
 }
 
-#edit-preset-json {
+#edit-preset-json,
+#create-preset-json {
   display: block;
   width: 100%;
   max-width: 100%;
