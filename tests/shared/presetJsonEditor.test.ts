@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  createCreatePresetDocument,
   createEditPresetDocument,
   formatEditPresetJson,
+  formatCreatePresetJson,
   resetEditPresetJson,
+  sanitizeImportedPresetDocument,
+  validateCreatePresetJson,
   validateEditPresetJson
 } from "../../src/shared/presetJsonEditor";
 import { createPresetRevision, isPresetRevisionMatch } from "../../src/shared/presetRevision";
@@ -31,6 +35,50 @@ function editValidation(text: string, name = samplePreset.name) {
 }
 
 describe("presetJsonEditor", () => {
+  it("creates a versioned create template with provisional identity and empty filters", () => {
+    const created = createCreatePresetDocument({
+      id: "provisional-id",
+      createdAt: "2026-06-11T08:00:00.000Z",
+      updatedAt: "2026-06-11T08:00:00.000Z"
+    });
+
+    expect(JSON.parse(created)).toEqual({
+      schemaVersion: 1,
+      preset: {
+        id: "provisional-id",
+        name: "",
+        createdAt: "2026-06-11T08:00:00.000Z",
+        updatedAt: "2026-06-11T08:00:00.000Z",
+        filters: []
+      }
+    });
+  });
+
+  it("requires at least one filter when validating a new preset document", () => {
+    expect(
+      validateCreatePresetJson(
+        createCreatePresetDocument({
+          id: samplePreset.id,
+          createdAt: samplePreset.createdAt,
+          updatedAt: samplePreset.updatedAt
+        }),
+        {
+          provisionalPreset: {
+            ...samplePreset,
+            name: ""
+          },
+          authoritativeName: ""
+        }
+      )
+    ).toEqual({
+      valid: false,
+      error: {
+        path: "preset.filters",
+        message: "preset.filters: Add at least one filter."
+      }
+    });
+  });
+
   it("creates the full versioned edit document", () => {
     expect(JSON.parse(createEditPresetDocument(samplePreset))).toEqual({
       schemaVersion: 1,
@@ -314,6 +362,128 @@ describe("presetJsonEditor", () => {
       preset: {
         ...samplePreset,
         name: "Current name"
+      }
+    });
+  });
+
+  it("sanitizes imported source identity metadata while keeping the pasted name and document shape", () => {
+    const imported = sanitizeImportedPresetDocument(createEditPresetDocument(samplePreset), {
+      provisionalPreset: {
+        id: "new-provisional-id",
+        name: "",
+        createdAt: "2026-06-11T09:00:00.000Z",
+        updatedAt: "2026-06-11T09:00:00.000Z",
+        filters: []
+      }
+    });
+
+    expect(imported).toEqual({
+      valid: true,
+      adoptedName: "Weekly sales review",
+      text: JSON.stringify(
+        {
+          schemaVersion: 1,
+          preset: {
+            id: "new-provisional-id",
+            name: "Weekly sales review",
+            createdAt: "2026-06-11T09:00:00.000Z",
+            updatedAt: "2026-06-11T09:00:00.000Z",
+            filters: samplePreset.filters
+          }
+        },
+        null,
+        2
+      )
+    });
+  });
+
+  it("loads parseable semantic-invalid imported JSON for correction", () => {
+    const imported = sanitizeImportedPresetDocument(
+      JSON.stringify(
+        {
+          schemaVersion: 2,
+          preset: {
+            ...samplePreset,
+            filters: []
+          }
+        },
+        null,
+        2
+      ),
+      {
+        provisionalPreset: {
+          id: "new-provisional-id",
+          name: "",
+          createdAt: "2026-06-11T09:00:00.000Z",
+          updatedAt: "2026-06-11T09:00:00.000Z",
+          filters: []
+        }
+      }
+    );
+
+    expect(imported).toMatchObject({
+      valid: true,
+      adoptedName: "Weekly sales review"
+    });
+    if (!imported.valid) {
+      throw new Error("Expected imported JSON to load.");
+    }
+    expect(JSON.parse(imported.text)).toMatchObject({
+      schemaVersion: 2,
+      preset: {
+        id: "new-provisional-id",
+        createdAt: "2026-06-11T09:00:00.000Z",
+        updatedAt: "2026-06-11T09:00:00.000Z",
+        filters: []
+      }
+    });
+  });
+
+  it("rejects non-versioned imported JSON without replacing the current draft", () => {
+    expect(
+      sanitizeImportedPresetDocument(JSON.stringify(samplePreset, null, 2), {
+        provisionalPreset: {
+          id: "new-provisional-id",
+          name: "",
+          createdAt: "2026-06-11T09:00:00.000Z",
+          updatedAt: "2026-06-11T09:00:00.000Z",
+          filters: []
+        }
+      })
+    ).toEqual({
+      valid: false,
+      error: {
+        path: "preset",
+        message: "Paste a complete preset JSON document."
+      }
+    });
+  });
+
+  it("formats valid create JSON using the shared formatter", () => {
+    const text =
+      '{"schemaVersion":1,"preset":{"id":"provisional-id","name":"План продаж","createdAt":"2026-06-11T08:00:00.000Z","updatedAt":"2026-06-11T08:00:00.000Z","filters":[{"title":"Team","type":"list","selectedLabels":["Бета","Альфа"]}]}}';
+
+    expect(
+      JSON.parse(
+        formatCreatePresetJson(text, {
+          provisionalPreset: {
+            id: "provisional-id",
+            name: "",
+            createdAt: "2026-06-11T08:00:00.000Z",
+            updatedAt: "2026-06-11T08:00:00.000Z",
+            filters: []
+          },
+          authoritativeName: "План продаж"
+        })
+      )
+    ).toEqual({
+      schemaVersion: 1,
+      preset: {
+        id: "provisional-id",
+        name: "План продаж",
+        createdAt: "2026-06-11T08:00:00.000Z",
+        updatedAt: "2026-06-11T08:00:00.000Z",
+        filters: [{ title: "Team", type: "list", selectedLabels: ["Бета", "Альфа"] }]
       }
     });
   });

@@ -98,6 +98,14 @@ function editButton(): HTMLButtonElement {
   return button;
 }
 
+function newButton(): HTMLButtonElement {
+  const button = document.querySelector<HTMLButtonElement>("#create-preset");
+  if (!button) {
+    throw new Error("New preset button not found.");
+  }
+  return button;
+}
+
 function confirmDeleteButton(): HTMLButtonElement {
   const button = document.querySelector<HTMLButtonElement>("#confirm-delete");
   if (!button) {
@@ -121,7 +129,10 @@ describe("popup", () => {
     vi.restoreAllMocks();
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
-      value: { writeText: vi.fn().mockResolvedValue(undefined) }
+      value: {
+        writeText: vi.fn().mockResolvedValue(undefined),
+        readText: vi.fn().mockResolvedValue("")
+      }
     });
     vi.spyOn(crypto, "randomUUID").mockReturnValue("00000000-0000-0000-0000-000000000000");
   });
@@ -167,6 +178,10 @@ describe("popup", () => {
   it("gives every icon action an accessible name and tooltip", async () => {
     await mountPopup();
 
+    expect(document.querySelector("#create-preset")).toMatchObject({
+      ariaLabel: "New preset",
+      title: "New preset"
+    });
     expect(document.querySelector("#export-preset")).toMatchObject({
       ariaLabel: "Copy preset JSON",
       title: "Copy preset JSON"
@@ -185,6 +200,7 @@ describe("popup", () => {
     await mountPopup([]);
 
     expect(document.querySelector<HTMLButtonElement>("#save-current")?.disabled).toBe(false);
+    expect(document.querySelector<HTMLButtonElement>("#create-preset")?.disabled).toBe(false);
     expect(document.querySelector<HTMLSelectElement>("#preset-select")?.options).toHaveLength(0);
     for (const id of ["apply-preset", "export-preset", "rename-preset", "delete-preset"]) {
       expect(document.querySelector<HTMLButtonElement>(`#${id}`)?.disabled).toBe(true);
@@ -204,6 +220,381 @@ describe("popup", () => {
     for (const id of ["apply-preset", "export-preset", "rename-preset", "delete-preset"]) {
       expect(document.querySelector<HTMLButtonElement>(`#${id}`)?.disabled).toBe(true);
     }
+    expect(document.querySelector<HTMLButtonElement>("#create-preset")?.disabled).toBe(false);
+  });
+
+  it("opens New preset with a blank authoritative name and provisional template", async () => {
+    await mountPopup([]);
+
+    click(newButton());
+
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>("#create-preset-dialog")?.hidden).toBe(false);
+    });
+    expect(document.activeElement).toBe(document.querySelector("#create-preset-name"));
+    expect(document.querySelector("#create-preset-title")?.textContent).toBe("New preset");
+    expect(document.querySelector<HTMLInputElement>("#create-preset-name")?.value).toBe("");
+    expect(document.querySelector("#create-preset-validation")?.textContent).toBe(
+      "preset.filters: Add at least one filter."
+    );
+    expect(JSON.parse(document.querySelector<HTMLTextAreaElement>("#create-preset-json")?.value ?? "")).toMatchObject({
+      schemaVersion: 1,
+      preset: {
+        id: "00000000-0000-0000-0000-000000000000",
+        name: "",
+        createdAt: expect.any(String),
+        updatedAt: expect.any(String),
+        filters: []
+      }
+    });
+  });
+
+  it("places the New preset action beside Save current filters", async () => {
+    await mountPopup([]);
+
+    const row = document.querySelector(".create-preset-actions");
+    expect(row?.querySelectorAll("button")).toHaveLength(2);
+    expect(Array.from(row?.querySelectorAll("button") ?? []).map((button) => button.id)).toEqual([
+      "save-current",
+      "create-preset"
+    ]);
+  });
+
+  it("pastes valid preset JSON, adopts the pasted name, and replaces source identity", async () => {
+    await mountPopup([]);
+    vi.mocked(navigator.clipboard.readText).mockResolvedValueOnce(
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          preset: {
+            id: "source-id",
+            name: "Shared preset",
+            createdAt: "2026-06-01T00:00:00.000Z",
+            updatedAt: "2026-06-02T00:00:00.000Z",
+            filters: [{ title: "Region", type: "list", selectedLabels: ["EMEA"] }]
+          }
+        },
+        null,
+        2
+      )
+    );
+
+    click(newButton());
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>("#create-preset-dialog")?.hidden).toBe(false);
+    });
+    click(document.querySelector("#paste-create-preset-json") as Element);
+
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLInputElement>("#create-preset-name")?.value).toBe("Shared preset");
+      expect(document.querySelector("#create-preset-validation")?.textContent).toBe("JSON is valid.");
+    });
+    expect(JSON.parse(document.querySelector<HTMLTextAreaElement>("#create-preset-json")?.value ?? "")).toMatchObject({
+      preset: {
+        id: "00000000-0000-0000-0000-000000000000",
+        name: "Shared preset",
+        createdAt: expect.any(String),
+        updatedAt: expect.any(String),
+        filters: [{ title: "Region", type: "list", selectedLabels: ["EMEA"] }]
+      }
+    });
+  });
+
+  it("keeps the current draft unchanged on syntax-invalid paste and later pastes respect manual name authority", async () => {
+    await mountPopup([]);
+    click(newButton());
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>("#create-preset-dialog")?.hidden).toBe(false);
+    });
+
+    const nameInput = document.querySelector<HTMLInputElement>("#create-preset-name");
+    const jsonInput = document.querySelector<HTMLTextAreaElement>("#create-preset-json");
+    if (!nameInput || !jsonInput) {
+      throw new Error("Create controls not found.");
+    }
+    const originalJson = jsonInput.value;
+
+    vi.mocked(navigator.clipboard.readText).mockResolvedValueOnce("{");
+    click(document.querySelector("#paste-create-preset-json") as Element);
+    await vi.waitFor(() => {
+      expect(document.querySelector("#create-preset-validation")?.textContent).toContain("Invalid JSON");
+    });
+    expect(nameInput.value).toBe("");
+    expect(jsonInput.value).toBe(originalJson);
+
+    nameInput.value = "Manual authority";
+    nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+    vi.mocked(navigator.clipboard.readText).mockResolvedValueOnce(
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          preset: {
+            id: "source-id",
+            name: "Pasted name",
+            createdAt: "2026-06-01T00:00:00.000Z",
+            updatedAt: "2026-06-02T00:00:00.000Z",
+            filters: [{ title: "Region", type: "list", selectedLabels: ["EMEA"] }]
+          }
+        },
+        null,
+        2
+      )
+    );
+    click(document.querySelector("#paste-create-preset-json") as Element);
+
+    await vi.waitFor(() => {
+      expect(document.querySelector("#create-preset-validation")?.textContent).toBe("JSON is valid.");
+    });
+    expect(nameInput.value).toBe("Manual authority");
+    expect(JSON.parse(jsonInput.value)).toMatchObject({
+      preset: {
+        name: "Manual authority"
+      }
+    });
+  });
+
+  it("shows clipboard denial and empty-clipboard errors without replacing the draft", async () => {
+    await mountPopup([]);
+    click(newButton());
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>("#create-preset-dialog")?.hidden).toBe(false);
+    });
+
+    const jsonInput = document.querySelector<HTMLTextAreaElement>("#create-preset-json");
+    if (!jsonInput) {
+      throw new Error("Create JSON input not found.");
+    }
+    const originalJson = jsonInput.value;
+
+    const denied = new Error("Denied.");
+    denied.name = "NotAllowedError";
+    vi.mocked(navigator.clipboard.readText).mockRejectedValueOnce(denied);
+    click(document.querySelector("#paste-create-preset-json") as Element);
+    await vi.waitFor(() => {
+      expect(document.querySelector("#create-preset-validation")?.textContent).toBe("Clipboard access was denied.");
+    });
+    expect(jsonInput.value).toBe(originalJson);
+
+    vi.mocked(navigator.clipboard.readText).mockResolvedValueOnce("");
+    click(document.querySelector("#paste-create-preset-json") as Element);
+    await vi.waitFor(() => {
+      expect(document.querySelector("#create-preset-validation")?.textContent).toBe(
+        "Clipboard does not contain preset JSON."
+      );
+    });
+    expect(jsonInput.value).toBe(originalJson);
+  });
+
+  it("loads parseable semantic-invalid pasted JSON for correction", async () => {
+    await mountPopup([]);
+    vi.mocked(navigator.clipboard.readText).mockResolvedValueOnce(
+      JSON.stringify(
+        {
+          schemaVersion: 2,
+          preset: {
+            id: "source-id",
+            name: "Shared preset",
+            createdAt: "2026-06-01T00:00:00.000Z",
+            updatedAt: "2026-06-02T00:00:00.000Z",
+            filters: []
+          }
+        },
+        null,
+        2
+      )
+    );
+
+    click(newButton());
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>("#create-preset-dialog")?.hidden).toBe(false);
+    });
+    click(document.querySelector("#paste-create-preset-json") as Element);
+
+    await vi.waitFor(() => {
+      expect(document.querySelector("#create-preset-validation")?.textContent).toBe(
+        "schemaVersion: only version 1 is supported."
+      );
+    });
+    expect(document.querySelector<HTMLInputElement>("#create-preset-name")?.value).toBe("Shared preset");
+    expect(JSON.parse(document.querySelector<HTMLTextAreaElement>("#create-preset-json")?.value ?? "")).toMatchObject({
+      schemaVersion: 2,
+      preset: {
+        id: "00000000-0000-0000-0000-000000000000",
+        name: "Shared preset",
+        filters: []
+      }
+    });
+  });
+
+  it("normalizes source identity when a complete document is typed directly into the editor", async () => {
+    await mountPopup([]);
+    click(newButton());
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>("#create-preset-dialog")?.hidden).toBe(false);
+    });
+
+    const jsonInput = document.querySelector<HTMLTextAreaElement>("#create-preset-json");
+    if (!jsonInput) {
+      throw new Error("Create JSON input not found.");
+    }
+
+    jsonInput.value = JSON.stringify(
+      {
+        schemaVersion: 1,
+        preset: {
+          id: "source-id",
+          name: "Typed preset",
+          createdAt: "2026-06-01T00:00:00.000Z",
+          updatedAt: "2026-06-02T00:00:00.000Z",
+          filters: [{ title: "Region", type: "list", selectedLabels: ["EMEA"] }]
+        }
+      },
+      null,
+      2
+    );
+    jsonInput.dispatchEvent(new Event("input", { bubbles: true }));
+
+    await vi.waitFor(() => {
+      expect(document.querySelector("#create-preset-validation")?.textContent).toBe("JSON is valid.");
+    });
+    expect(document.querySelector<HTMLInputElement>("#create-preset-name")?.value).toBe("Typed preset");
+    expect(JSON.parse(jsonInput.value)).toMatchObject({
+      preset: {
+        id: "00000000-0000-0000-0000-000000000000",
+        name: "Typed preset",
+        createdAt: expect.any(String),
+        updatedAt: expect.any(String)
+      }
+    });
+  });
+
+  it("reset clears manual-name authority and restores the initial create template", async () => {
+    await mountPopup([]);
+    click(newButton());
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>("#create-preset-dialog")?.hidden).toBe(false);
+    });
+
+    const nameInput = document.querySelector<HTMLInputElement>("#create-preset-name");
+    const jsonInput = document.querySelector<HTMLTextAreaElement>("#create-preset-json");
+    if (!nameInput || !jsonInput) {
+      throw new Error("Create controls not found.");
+    }
+    nameInput.value = "Manual authority";
+    nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+    vi.mocked(navigator.clipboard.readText).mockResolvedValueOnce(
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          preset: {
+            id: "source-id",
+            name: "Pasted name",
+            createdAt: "2026-06-01T00:00:00.000Z",
+            updatedAt: "2026-06-02T00:00:00.000Z",
+            filters: [{ title: "Region", type: "list", selectedLabels: ["EMEA"] }]
+          }
+        },
+        null,
+        2
+      )
+    );
+    click(document.querySelector("#paste-create-preset-json") as Element);
+    await vi.waitFor(() => {
+      expect(nameInput.value).toBe("Manual authority");
+    });
+
+    click(document.querySelector("#reset-create-preset-json") as Element);
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>("#reset-create-preset-dialog")?.hidden).toBe(false);
+    });
+    click(document.querySelector("#confirm-reset-create-preset") as Element);
+    await vi.waitFor(() => {
+      expect(nameInput.value).toBe("");
+      expect(document.querySelector("#create-preset-validation")?.textContent).toBe(
+        "preset.filters: Add at least one filter."
+      );
+    });
+    expect(JSON.parse(jsonInput.value)).toMatchObject({
+      schemaVersion: 1,
+      preset: {
+        name: "",
+        filters: []
+      }
+    });
+
+    vi.mocked(navigator.clipboard.readText).mockResolvedValueOnce(
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          preset: {
+            id: "source-id-2",
+            name: "Adopted after reset",
+            createdAt: "2026-06-01T00:00:00.000Z",
+            updatedAt: "2026-06-02T00:00:00.000Z",
+            filters: [{ title: "Team", type: "list", selectedLabels: ["North"] }]
+          }
+        },
+        null,
+        2
+      )
+    );
+    click(document.querySelector("#paste-create-preset-json") as Element);
+    await vi.waitFor(() => {
+      expect(nameInput.value).toBe("Adopted after reset");
+    });
+  });
+
+  it("creates a new preset once, selects it, and preserves the draft after storage failure", async () => {
+    await mountPopup([preset("one", "Existing")]);
+    click(newButton());
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>("#create-preset-dialog")?.hidden).toBe(false);
+    });
+
+    const nameInput = document.querySelector<HTMLInputElement>("#create-preset-name");
+    const jsonInput = document.querySelector<HTMLTextAreaElement>("#create-preset-json");
+    if (!nameInput || !jsonInput) {
+      throw new Error("Create controls not found.");
+    }
+    nameInput.value = "Created from JSON";
+    nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+    const createDocument = JSON.parse(jsonInput.value) as { schemaVersion: number; preset: Preset };
+    createDocument.preset.filters = [{ title: "Region", type: "list", selectedLabels: ["EMEA"] }];
+    jsonInput.value = JSON.stringify(createDocument, null, 2);
+    jsonInput.dispatchEvent(new Event("input", { bubbles: true }));
+    await vi.waitFor(() => {
+      expect(document.querySelector("#create-preset-validation")?.textContent).toBe("JSON is valid.");
+    });
+
+    testState.savePreset.mockRejectedValueOnce(new Error("Storage unavailable."));
+    click(document.querySelector("#confirm-create-preset") as Element);
+    await vi.waitFor(() => {
+      expect(document.querySelector("#create-preset-save-error")?.textContent).toBe("Storage unavailable.");
+    });
+    expect(document.querySelector<HTMLElement>("#create-preset-dialog")?.hidden).toBe(false);
+    expect(nameInput.value).toBe("Created from JSON");
+
+    click(document.querySelector("#confirm-create-preset") as Element);
+    click(document.querySelector("#confirm-create-preset") as Element);
+    await vi.waitFor(() => {
+      expect(testState.savePreset).toHaveBeenCalledTimes(2);
+      expect(testState.savePreset).toHaveBeenLastCalledWith(
+        pageKey,
+        expect.objectContaining({
+          id: "00000000-0000-0000-0000-000000000000",
+          name: "Created from JSON",
+          createdAt: expect.any(String),
+          updatedAt: expect.any(String),
+          filters: [{ title: "Region", type: "list", selectedLabels: ["EMEA"] }]
+        }),
+        { uniqueNormalizedName: "created from json" }
+      );
+      expect(document.querySelector<HTMLSelectElement>("#preset-select")?.value).toBe(
+        "00000000-0000-0000-0000-000000000000"
+      );
+      expect(document.querySelector<HTMLElement>("#create-preset-dialog")?.hidden).toBe(true);
+      expect(document.querySelector("#result")?.textContent).toBe("Preset created.");
+    });
   });
 
   it("opens one confirmation without deleting and cancels with focus restoration", async () => {
