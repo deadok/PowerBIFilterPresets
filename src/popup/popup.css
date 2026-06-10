@@ -1,21 +1,30 @@
 :root {
   color-scheme: light;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --expanded-popup-width: 600px;
+  --expanded-popup-height: 600px;
+}
+
+html {
+  height: 100%;
 }
 
 body {
   margin: 0;
-  width: 320px;
-  min-width: 320px;
+  width: 360px;
+  min-width: 360px;
+  height: 540px;
+  min-height: 540px;
+  display: flex;
   color: #1f2937;
   background: #f8fafc;
 }
 
 body.review-open {
-  width: 480px;
+  width: 100vw;
   min-width: 0;
   max-width: 100vw;
-  height: 560px;
+  height: 100vh;
   max-height: 100vh;
   overflow: hidden;
 }
@@ -24,14 +33,38 @@ body.review-open .popup-content {
   display: none;
 }
 
+#app {
+  width: 100%;
+  height: 100%;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .popup-shell {
   position: relative;
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 100%;
 }
 
 .popup-content {
   display: grid;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
   gap: 10px;
+  height: 100%;
+  min-height: 100%;
   padding: 14px;
+  box-sizing: border-box;
 }
 
 header {
@@ -158,7 +191,7 @@ select:disabled {
 .popup-separator {
   width: 100%;
   height: 1px;
-  margin: 2px 0;
+  margin: 4px 0;
   border: 0;
   background: #dbe3ee;
 }
@@ -257,12 +290,16 @@ select:disabled {
 }
 
 #result {
-  min-height: 40px;
+  min-height: 0;
+  height: 100%;
+  align-self: stretch;
+  box-sizing: border-box;
   padding: 8px;
   border: 1px solid #e2e8f0;
   border-radius: 6px;
   background: #fff;
   white-space: pre-wrap;
+  overflow: auto;
   overflow-wrap: anywhere;
   font-size: 13px;
 }
@@ -282,7 +319,9 @@ select:disabled {
 }
 
 .modal-backdrop.review-backdrop {
+  place-items: stretch;
   padding: 0;
+  background: #f8fafc;
 }
 
 .popup-dialog {
@@ -298,19 +337,22 @@ select:disabled {
 }
 
 .save-review-dialog {
-  width: 100vw;
-  max-width: 480px;
-  height: 100vh;
-  max-height: 560px;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  max-height: 100%;
   display: grid;
   grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   gap: 12px;
   padding: 16px;
   overflow: hidden;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .save-review-dialog[hidden],
-.rename-dialog[hidden],
+.edit-preset-dialog[hidden],
+.reset-edit-preset-dialog[hidden],
 .delete-dialog[hidden] {
   display: none;
 }
@@ -461,12 +503,124 @@ select:disabled {
   color: #912018;
 }
 
-.rename-dialog {
-  max-width: 380px;
+.edit-preset-dialog {
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  max-height: 100%;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
+  gap: 6px;
+  padding: 12px 14px;
+  overflow: hidden;
+  border-radius: 0;
+  box-shadow: none;
 }
 
-.rename-dialog .dialog-field {
-  margin-top: 12px;
+.edit-preset-dialog .dialog-field {
+  min-width: 0;
+  gap: 3px;
+}
+
+.edit-preset-dialog .dialog-field input {
+  min-height: 34px;
+}
+
+.edit-preset-dialog .dialog-header p {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.edit-json-toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.edit-json-toolbar h3 {
+  margin: 0;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.edit-json-hint {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.edit-json-actions {
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.edit-json-action {
+  width: auto;
+  min-height: 30px;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.edit-json-editor {
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid #98a5b6;
+  border-radius: 7px;
+  background: #101828;
+}
+
+#edit-preset-json {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  padding: 10px 11px;
+  resize: none;
+  overflow: auto;
+  border: 0;
+  border-radius: 0;
+  color: #e6edf6;
+  background: #101828;
+  font:
+    12px/1.42 ui-monospace,
+    "SFMono-Regular",
+    Menlo,
+    Consolas,
+    monospace;
+  tab-size: 2;
+  white-space: pre;
+}
+
+.edit-preset-validation {
+  min-height: 24px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.2;
+  color: #087443;
+}
+
+.edit-preset-validation.is-invalid {
+  color: #912018;
+}
+
+.edit-preset-footer {
+  margin-top: 0;
+}
+
+.edit-preset-footer button {
+  min-height: 38px;
+}
+
+.reset-edit-preset-dialog {
+  max-width: 380px;
 }
 
 #delete-dialog-description {
@@ -494,7 +648,7 @@ select:disabled {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
-  margin-top: 16px;
+  margin-top: 0;
 }
 
 .button-destructive {
@@ -511,6 +665,11 @@ select:disabled {
 @media (max-height: 400px) {
   .save-review-dialog {
     gap: 4px;
+    padding: 10px;
+  }
+
+  .edit-preset-dialog {
+    gap: 6px;
     padding: 10px;
   }
 

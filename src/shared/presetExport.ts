@@ -1,19 +1,21 @@
 import type { Preset } from "./types";
 
+export const PRESET_EXPORT_SCHEMA_VERSION = 1;
+
 type PresetExport = {
-  schemaVersion: 1;
+  schemaVersion: typeof PRESET_EXPORT_SCHEMA_VERSION;
   preset: Preset;
 };
 
+export function createPresetExportDocument(preset: Preset): PresetExport {
+  return {
+    schemaVersion: PRESET_EXPORT_SCHEMA_VERSION,
+    preset
+  };
+}
+
 export function serializePresetExport(preset: Preset): string {
-  return JSON.stringify(
-    {
-      schemaVersion: 1,
-      preset
-    },
-    null,
-    2
-  );
+  return JSON.stringify(createPresetExportDocument(preset), null, 2);
 }
 
 export function parsePresetExport(input: unknown): Preset {
@@ -49,7 +51,7 @@ function isVersionedPresetExport(input: Record<string, unknown>): input is Prese
     return false;
   }
 
-  if (input.schemaVersion !== 1) {
+  if (input.schemaVersion !== PRESET_EXPORT_SCHEMA_VERSION) {
     throw new Error("Invalid preset export: schemaVersion must be 1.");
   }
 

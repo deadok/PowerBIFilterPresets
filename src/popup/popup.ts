@@ -12,7 +12,15 @@ import {
   setReviewFilterIncluded,
   type ReviewDraft
 } from "./reviewDraft";
+import {
+  createEditPresetDocument,
+  formatEditPresetJson,
+  resetEditPresetJson,
+  validateEditPresetJson,
+  type EditPresetJsonResult
+} from "../shared/presetJsonEditor";
 import { serializePresetExport } from "../shared/presetExport";
+import { createPresetRevision } from "../shared/presetRevision";
 import { createPresetStore, type PresetStore } from "../shared/presetStore";
 import { summarizeResults } from "../shared/resultSummary";
 import type { ContentRequest, ContentResponse, FilterPresetItem, PagePresetCollection, Preset } from "../shared/types";
@@ -35,7 +43,16 @@ type PendingDeletion = {
   previousId?: string;
 };
 
-type ActiveDialog = "save" | "rename" | "delete";
+type EditDraft = {
+  originalPreset: Preset;
+  originalRevision: string;
+  currentName: string;
+  jsonText: string;
+  validation: EditPresetJsonResult;
+  nameSyncPending: boolean;
+};
+
+type ActiveDialog = "save" | "edit" | "reset" | "delete";
 
 const selectedActionIds = ["apply-preset", "export-preset", "rename-preset", "delete-preset"] as const;
 
@@ -107,12 +124,19 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
   const clearAllButton = requiredElement<HTMLButtonElement>(app, "#clear-all-filters");
   const cancelSaveButton = requiredElement<HTMLButtonElement>(app, "#cancel-save");
   const confirmSaveButton = requiredElement<HTMLButtonElement>(app, "#confirm-save");
-  const renameDialog = requiredElement<HTMLElement>(app, "#rename-dialog");
-  const renameNameInput = requiredElement<HTMLInputElement>(app, "#rename-name");
-  const renameNameError = requiredElement<HTMLParagraphElement>(app, "#rename-name-error");
-  const renameStorageError = requiredElement<HTMLParagraphElement>(app, "#rename-storage-error");
-  const cancelRenameButton = requiredElement<HTMLButtonElement>(app, "#cancel-rename");
-  const confirmRenameButton = requiredElement<HTMLButtonElement>(app, "#confirm-rename");
+  const editDialog = requiredElement<HTMLElement>(app, "#edit-preset-dialog");
+  const editNameInput = requiredElement<HTMLInputElement>(app, "#edit-preset-name");
+  const editNameError = requiredElement<HTMLParagraphElement>(app, "#edit-preset-name-error");
+  const editJsonInput = requiredElement<HTMLTextAreaElement>(app, "#edit-preset-json");
+  const editValidation = requiredElement<HTMLParagraphElement>(app, "#edit-preset-validation");
+  const editSaveError = requiredElement<HTMLParagraphElement>(app, "#edit-preset-save-error");
+  const formatEditJsonButton = requiredElement<HTMLButtonElement>(app, "#format-edit-preset-json");
+  const resetEditJsonButton = requiredElement<HTMLButtonElement>(app, "#reset-edit-preset-json");
+  const cancelEditButton = requiredElement<HTMLButtonElement>(app, "#cancel-edit-preset");
+  const confirmEditButton = requiredElement<HTMLButtonElement>(app, "#confirm-edit-preset");
+  const resetDialog = requiredElement<HTMLElement>(app, "#reset-edit-preset-dialog");
+  const cancelResetButton = requiredElement<HTMLButtonElement>(app, "#cancel-reset-edit-preset");
+  const confirmResetButton = requiredElement<HTMLButtonElement>(app, "#confirm-reset-edit-preset");
   const deleteDialog = requiredElement<HTMLElement>(app, ".delete-dialog");
   const deletePresetName = requiredElement<HTMLElement>(app, "#delete-preset-name");
   const deleteError = requiredElement<HTMLParagraphElement>(app, "#delete-error");
@@ -124,18 +148,22 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
   const pageKey = normalizePageUrl(tab.url);
   let currentPresets: Preset[] = [];
   let reviewDraft: ReviewDraft | undefined;
-  let pendingRenameId: string | undefined;
+  let editDraft: EditDraft | undefined;
   let pendingDeletion: PendingDeletion | undefined;
   let captureInFlight = false;
   let saveInFlight = false;
-  let renameInFlight = false;
+  let editInFlight = false;
   let deleteInFlight = false;
+  let editValidationTimer: number | undefined;
+  let editValidationToken = 0;
+  let resetRestoreFocusTarget: HTMLElement | undefined;
   const dialogState = createPopupDialogState<ActiveDialog>({
     background: popupContent,
     backdrop: modalBackdrop,
     dialogs: {
       save: saveDialog,
-      rename: renameDialog,
+      edit: editDialog,
+      reset: resetDialog,
       delete: deleteDialog
     }
   });
@@ -186,7 +214,7 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     if (!dialogState.open(kind)) {
       return false;
     }
-    if (kind === "save") {
+    if (kind === "save" || kind === "edit" || kind === "reset") {
       document.body.classList.add("review-open");
       modalBackdrop.classList.add("review-backdrop");
     }
@@ -197,7 +225,7 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     if (!dialogState.close(kind)) {
       return;
     }
-    if (kind === "save") {
+    if (kind === "save" || kind === "edit" || kind === "reset") {
       document.body.classList.remove("review-open");
       modalBackdrop.classList.remove("review-backdrop");
     }
@@ -348,19 +376,156 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     return true;
   }
 
-  function closeRenameDialog(restoreFocus: boolean): void {
-    closeDialog("rename");
-    pendingRenameId = undefined;
-    renameInFlight = false;
-    renameNameInput.disabled = false;
-    renameNameInput.value = "";
-    setMessage(renameNameError, "");
-    setMessage(renameStorageError, "");
-    cancelRenameButton.disabled = false;
-    confirmRenameButton.disabled = false;
+  function renderEditValidationMessage(message: string, invalid: boolean): void {
+    editValidation.textContent = message;
+    editValidation.classList.toggle("is-invalid", invalid);
+  }
+
+  function setEditControlsDisabled(disabled: boolean): void {
+    editNameInput.disabled = disabled;
+    editJsonInput.disabled = disabled;
+    formatEditJsonButton.disabled = disabled;
+    resetEditJsonButton.disabled = disabled;
+    cancelEditButton.disabled = disabled;
+    confirmEditButton.disabled = disabled;
+  }
+
+  function clearEditValidationTimer(): void {
+    if (editValidationTimer !== undefined) {
+      window.clearTimeout(editValidationTimer);
+      editValidationTimer = undefined;
+    }
+  }
+
+  function applyEditValidationResult(validation: EditPresetJsonResult, nextText?: string): void {
+    if (!editDraft) {
+      return;
+    }
+
+    editDraft.validation = validation;
+    if (nextText !== undefined) {
+      editDraft.jsonText = nextText;
+      editJsonInput.value = nextText;
+    } else {
+      editDraft.jsonText = editJsonInput.value;
+    }
+
+    if (validation.valid) {
+      renderEditValidationMessage("JSON is valid.", false);
+      setMessage(editSaveError, "");
+    } else {
+      renderEditValidationMessage(validation.error.message, true);
+    }
+
+    formatEditJsonButton.disabled = editInFlight || !validation.valid;
+    resetEditJsonButton.disabled = editInFlight;
+    confirmEditButton.disabled = editInFlight;
+  }
+
+  function validateEditDraftNow(allowPendingNameSync: boolean): EditPresetJsonResult | undefined {
+    if (!editDraft) {
+      return undefined;
+    }
+
+    const validation = validateEditPresetJson(editJsonInput.value, {
+      preset: editDraft.originalPreset,
+      authoritativeName: editDraft.currentName,
+      allowNameMismatch: allowPendingNameSync
+    });
+
+    if (validation.valid) {
+      editDraft.nameSyncPending = false;
+      applyEditValidationResult(validation, validation.synchronizedText);
+    } else {
+      applyEditValidationResult(validation);
+    }
+
+    return validation;
+  }
+
+  function scheduleEditValidation(): void {
+    if (!editDraft) {
+      return;
+    }
+
+    clearEditValidationTimer();
+    const token = ++editValidationToken;
+    editValidationTimer = window.setTimeout(() => {
+      if (!editDraft || dialogState.active !== "edit" || token !== editValidationToken) {
+        return;
+      }
+      validateEditDraftNow(editDraft.nameSyncPending);
+    }, 250);
+  }
+
+  function closeEditDialog(restoreFocus: boolean): void {
+    clearEditValidationTimer();
+    editValidationToken += 1;
+    closeDialog("edit");
+    editDraft = undefined;
+    editInFlight = false;
+    editNameInput.value = "";
+    editJsonInput.value = "";
+    setEditControlsDisabled(false);
+    setMessage(editNameError, "");
+    setMessage(editSaveError, "");
+    renderEditValidationMessage("", false);
     if (restoreFocus) {
       renameButton.focus();
     }
+  }
+
+  function openEditDialog(preset: Preset): void {
+    const jsonText = createEditPresetDocument(preset);
+    editDraft = {
+      originalPreset: preset,
+      originalRevision: createPresetRevision(preset),
+      currentName: preset.name.trim(),
+      jsonText,
+      validation: validateEditPresetJson(jsonText, {
+        preset,
+        authoritativeName: preset.name.trim()
+      }),
+      nameSyncPending: false
+    };
+
+    editNameInput.value = editDraft.currentName;
+    editJsonInput.value = jsonText;
+    setMessage(editNameError, "");
+    setMessage(editSaveError, "");
+    setEditControlsDisabled(false);
+    applyEditValidationResult(editDraft.validation, jsonText);
+    if (!openDialog("edit")) {
+      editDraft = undefined;
+      return;
+    }
+    editNameInput.focus();
+    editNameInput.select();
+  }
+
+  function openResetDialog(): void {
+    if (!editDraft || editInFlight) {
+      return;
+    }
+
+    resetRestoreFocusTarget = resetEditJsonButton;
+    closeDialog("edit");
+    if (!openDialog("reset")) {
+      openDialog("edit");
+      return;
+    }
+    cancelResetButton.focus();
+  }
+
+  function closeResetDialog(restoreFocus: boolean): void {
+    closeDialog("reset");
+    if (editDraft) {
+      openDialog("edit");
+    }
+    if (restoreFocus) {
+      (resetRestoreFocusTarget ?? resetEditJsonButton).focus();
+    }
+    resetRestoreFocusTarget = undefined;
   }
 
   function closeDeleteDialog(restoreTriggerFocus: boolean): void {
@@ -584,21 +749,55 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
         return;
       }
 
-      renameNameInput.value = preset.name.trim();
-      setMessage(renameNameError, "");
-      setMessage(renameStorageError, "");
-      if (!openDialog("rename")) {
-        return;
-      }
-      pendingRenameId = preset.id;
-      renameNameInput.focus();
-      renameNameInput.select();
+      openEditDialog(preset);
     });
   });
 
-  renameNameInput.addEventListener("input", () => {
-    setMessage(renameNameError, "");
-    setMessage(renameStorageError, "");
+  editNameInput.addEventListener("input", () => {
+    if (!editDraft || editInFlight) {
+      return;
+    }
+
+    editDraft.currentName = editNameInput.value;
+    setMessage(editNameError, "");
+    setMessage(editSaveError, "");
+
+    if (editDraft.validation.valid) {
+      applyEditValidationResult(
+        {
+          ...editDraft.validation,
+          normalizedPreset: {
+            ...editDraft.validation.normalizedPreset,
+            name: editDraft.currentName
+          },
+          synchronizedText: resetEditPresetJson(
+            {
+              ...editDraft.originalPreset,
+              filters: editDraft.validation.filters
+            },
+            editDraft.currentName
+          ),
+          formattedText: resetEditPresetJson(
+            {
+              ...editDraft.originalPreset,
+              filters: editDraft.validation.filters
+            },
+            editDraft.currentName
+          )
+        },
+        resetEditPresetJson(
+          {
+            ...editDraft.originalPreset,
+            filters: editDraft.validation.filters
+          },
+          editDraft.currentName
+        )
+      );
+      editDraft.nameSyncPending = false;
+      return;
+    }
+
+    editDraft.nameSyncPending = true;
   });
 
   saveNameInput.addEventListener("keydown", (event) => {
@@ -608,85 +807,153 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     }
   });
 
-  renameNameInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && !renameInFlight) {
+  editNameInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !editInFlight) {
       event.preventDefault();
-      confirmRenameButton.click();
+      confirmEditButton.click();
     }
   });
 
-  cancelRenameButton.addEventListener("click", () => {
-    if (!renameInFlight) {
-      closeRenameDialog(true);
-    }
-  });
-
-  confirmRenameButton.addEventListener("click", () => {
-    if (!pendingRenameId || renameInFlight) {
+  editJsonInput.addEventListener("input", () => {
+    if (!editDraft || editInFlight) {
       return;
     }
-    const renameId = pendingRenameId;
-    renameInFlight = true;
-    renameNameInput.disabled = true;
-    cancelRenameButton.disabled = true;
-    confirmRenameButton.disabled = true;
-    renameDialog.setAttribute("aria-busy", "true");
-    setMessage(renameNameError, "");
-    setMessage(renameStorageError, "");
-    let focusNameAfterSubmit = false;
+
+    editDraft.jsonText = editJsonInput.value;
+    setMessage(editSaveError, "");
+    scheduleEditValidation();
+  });
+
+  formatEditJsonButton.addEventListener("click", () => {
+    if (!editDraft || editInFlight || !editDraft.validation.valid) {
+      return;
+    }
+
+    const formattedText = formatEditPresetJson(editJsonInput.value, {
+      preset: editDraft.originalPreset,
+      authoritativeName: editDraft.currentName
+    });
+    applyEditValidationResult(editDraft.validation, formattedText);
+  });
+
+  resetEditJsonButton.addEventListener("click", () => {
+    if (!editDraft || editInFlight) {
+      return;
+    }
+
+    if (editJsonInput.value === resetEditPresetJson(editDraft.originalPreset, editDraft.currentName)) {
+      const resetText = resetEditPresetJson(editDraft.originalPreset, editDraft.currentName);
+      applyEditValidationResult(
+        validateEditPresetJson(resetText, {
+          preset: editDraft.originalPreset,
+          authoritativeName: editDraft.currentName
+        }),
+        resetText
+      );
+      editJsonInput.focus();
+      return;
+    }
+
+    openResetDialog();
+  });
+
+  cancelEditButton.addEventListener("click", () => {
+    if (!editInFlight) {
+      closeEditDialog(true);
+    }
+  });
+
+  confirmEditButton.addEventListener("click", () => {
+    if (!editDraft || editInFlight) {
+      return;
+    }
+
+    clearEditValidationTimer();
+    const currentDraft = editDraft;
+    const collectionValidation = validatePresetName(editNameInput.value, { schemaVersion: 1, pageKey, presets: currentPresets }, currentDraft.originalPreset.id);
+    if (!collectionValidation.valid) {
+      setMessage(editNameError, collectionValidation.error);
+      editNameInput.focus();
+      return;
+    }
+
+    currentDraft.nameSyncPending = currentDraft.nameSyncPending || currentDraft.currentName !== collectionValidation.name;
+    currentDraft.currentName = collectionValidation.name;
+    const jsonValidation = validateEditPresetJson(editJsonInput.value, {
+      preset: currentDraft.originalPreset,
+      authoritativeName: currentDraft.currentName,
+      allowNameMismatch: currentDraft.nameSyncPending
+    });
+    if (!jsonValidation.valid) {
+      applyEditValidationResult(jsonValidation);
+      editJsonInput.focus();
+      return;
+    }
+
+    applyEditValidationResult(jsonValidation, jsonValidation.synchronizedText);
+    editInFlight = true;
+    setEditControlsDisabled(true);
+    editDialog.setAttribute("aria-busy", "true");
+    setMessage(editNameError, "");
+    setMessage(editSaveError, "");
 
     void dependencies.store
-      .getPageCollection(pageKey)
-      .then(async (collection) => {
-        const preset = collection.presets.find((candidate) => candidate.id === renameId);
-        if (!preset) {
-          throw new Error("The selected preset no longer exists.");
+      .savePreset(
+        pageKey,
+        {
+          ...jsonValidation.normalizedPreset,
+          name: collectionValidation.name,
+          updatedAt: dependencies.now().toISOString()
+        },
+        {
+          requireExisting: true,
+          expectedRevision: currentDraft.originalRevision,
+          uniqueNormalizedName: normalizePresetName(collectionValidation.name)
         }
-        const validation = validatePresetName(renameNameInput.value, collection, renameId);
-        if (!validation.valid) {
-          setMessage(renameNameError, validation.error);
-          focusNameAfterSubmit = true;
-          return;
-        }
-
-        const nextCollection = await dependencies.store.savePreset(
-          pageKey,
-          {
-            ...preset,
-            name: validation.name,
-            updatedAt: dependencies.now().toISOString()
-          },
-          {
-            requireExisting: true,
-            uniqueNormalizedName: normalizePresetName(validation.name)
-          }
-        );
-        renderCollection(nextCollection, preset.id);
-        closeRenameDialog(false);
-        renameDialog.removeAttribute("aria-busy");
-        renderResult(result, "Preset renamed.");
+      )
+      .then((nextCollection) => {
+        renderCollection(nextCollection, currentDraft.originalPreset.id);
+        closeEditDialog(false);
+        editDialog.removeAttribute("aria-busy");
+        renderResult(result, "Preset updated.");
         renameButton.focus();
       })
       .catch((error: unknown) => {
         if (isPresetNameConflict(error)) {
-          setMessage(renameNameError, errorMessage(error));
-          focusNameAfterSubmit = true;
+          setMessage(editNameError, errorMessage(error));
+          editNameInput.focus();
         } else {
-          setMessage(renameStorageError, errorMessage(error));
+          setMessage(editSaveError, errorMessage(error));
         }
       })
       .finally(() => {
-        if (dialogState.active === "rename") {
-          renameInFlight = false;
-          renameNameInput.disabled = false;
-          renameDialog.removeAttribute("aria-busy");
-          cancelRenameButton.disabled = false;
-          confirmRenameButton.disabled = false;
-          if (focusNameAfterSubmit) {
-            renameNameInput.focus();
-          }
+        if (dialogState.active === "edit") {
+          editInFlight = false;
+          setEditControlsDisabled(false);
+          editDialog.removeAttribute("aria-busy");
+          formatEditJsonButton.disabled = !editDraft?.validation.valid;
         }
       });
+  });
+
+  cancelResetButton.addEventListener("click", () => {
+    closeResetDialog(true);
+  });
+
+  confirmResetButton.addEventListener("click", () => {
+    if (!editDraft) {
+      return;
+    }
+    const resetText = resetEditPresetJson(editDraft.originalPreset, editDraft.currentName);
+    closeResetDialog(false);
+    applyEditValidationResult(
+      validateEditPresetJson(resetText, {
+        preset: editDraft.originalPreset,
+        authoritativeName: editDraft.currentName
+      }),
+      resetText
+    );
+    editJsonInput.focus();
   });
 
   deleteButton.addEventListener("click", openDeleteDialog);
@@ -749,15 +1016,17 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     }
 
     if (event.key === "Escape") {
-      const operationInFlight = saveInFlight || renameInFlight || deleteInFlight;
+      const operationInFlight = saveInFlight || editInFlight || deleteInFlight;
       event.preventDefault();
       if (operationInFlight) {
         return;
       }
       if (dialogState.active === "save") {
         closeSaveDialog(true);
-      } else if (dialogState.active === "rename") {
-        closeRenameDialog(true);
+      } else if (dialogState.active === "edit") {
+        closeEditDialog(true);
+      } else if (dialogState.active === "reset") {
+        closeResetDialog(true);
       } else {
         closeDeleteDialog(true);
       }

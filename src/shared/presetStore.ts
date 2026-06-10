@@ -1,4 +1,5 @@
 import type { PagePresetCollection, Preset } from "./types";
+import { isPresetRevisionMatch } from "./presetRevision";
 
 type StorageArea = {
   get(key: string): Promise<Record<string, unknown>>;
@@ -14,6 +15,7 @@ export type PresetStore = {
 export type SavePresetOptions = {
   uniqueNormalizedName?: string;
   requireExisting?: boolean;
+  expectedRevision?: string;
 };
 
 export class PresetNameConflictError extends Error {
@@ -27,6 +29,13 @@ export class PresetNotFoundError extends Error {
   constructor() {
     super("The selected preset no longer exists.");
     this.name = "PresetNotFoundError";
+  }
+}
+
+export class PresetRevisionConflictError extends Error {
+  constructor() {
+    super("This preset changed while you were editing it. Close the editor and reopen the preset before saving.");
+    this.name = "PresetRevisionConflictError";
   }
 }
 
@@ -82,6 +91,14 @@ export function createPresetStore(storage: StorageArea = chrome.storage.local): 
         const existingPreset = collection.presets.find((existing) => existing.id === preset.id);
         if (options.requireExisting && !existingPreset) {
           throw new PresetNotFoundError();
+        }
+        if (options.expectedRevision) {
+          if (!existingPreset) {
+            throw new PresetNotFoundError();
+          }
+          if (!isPresetRevisionMatch(existingPreset, options.expectedRevision)) {
+            throw new PresetRevisionConflictError();
+          }
         }
         if (
           options.uniqueNormalizedName &&
