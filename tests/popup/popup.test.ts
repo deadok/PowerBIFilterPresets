@@ -144,6 +144,18 @@ describe("popup", () => {
     expect(apply?.disabled).toBe(false);
   });
 
+  it("shows a decorative brand logo without replacing the accessible heading", async () => {
+    await mountPopup();
+
+    const header = document.querySelector(".popup-header");
+    const logo = header?.querySelector<HTMLImageElement>(".popup-logo");
+
+    expect(header?.querySelector("h1")?.textContent).toBe("Power BI Presets");
+    expect(logo?.getAttribute("src")).toBe("/assets/brand/logo.png");
+    expect(logo?.getAttribute("alt")).toBe("");
+    expect(logo?.getAttribute("aria-hidden")).toBe("true");
+  });
+
   it("gives every icon action an accessible name and tooltip", async () => {
     await mountPopup();
 
