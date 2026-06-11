@@ -41,7 +41,7 @@ jobs:
         run: |
           set -euo pipefail
           git fetch --force --no-tags origin main
-          git fetch --force --tags origin "refs/tags/v*"
+          git fetch --force --tags origin
 
       - name: Derive trusted release context
         id: release_context
