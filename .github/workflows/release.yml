@@ -26,13 +26,13 @@ jobs:
       target_sha: ${{ steps.release_context.outputs.target_sha }}
     steps:
       - name: Checkout trusted workflow code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: main
           fetch-depth: 0
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -143,13 +143,13 @@ jobs:
       contents: write
     steps:
       - name: Checkout trusted workflow code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: main
           fetch-depth: 0
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
