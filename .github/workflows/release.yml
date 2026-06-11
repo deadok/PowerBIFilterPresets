@@ -90,10 +90,6 @@ jobs:
         working-directory: ${{ runner.temp }}/release-target
         run: npm ci
 
-      - name: Run target tests
-        working-directory: ${{ runner.temp }}/release-target
-        run: npm test
-
       - name: Run target typecheck
         working-directory: ${{ runner.temp }}/release-target
         run: npm run typecheck
@@ -101,6 +97,10 @@ jobs:
       - name: Build target extension
         working-directory: ${{ runner.temp }}/release-target
         run: npm run build
+
+      - name: Run target tests
+        working-directory: ${{ runner.temp }}/release-target
+        run: npm test
 
       - name: Validate built manifest and assets from trusted code
         run: |
