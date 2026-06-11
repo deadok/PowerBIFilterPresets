@@ -2,7 +2,7 @@
 
 ## Scope
 
-Feature 5 adds a tag-driven GitHub Actions release flow for the extension. Releases run only for pushed stable tags matching `vMAJOR.MINOR.PATCH` and produce:
+Feature 5 adds a tag-driven GitHub Actions release flow for the extension. Pushed stable tags matching `vMAJOR.MINOR.PATCH` first run an unprivileged tag-candidate workflow, and successful candidates trigger the privileged release workflow from trusted default-branch code. The published release produces:
 
 - `power-bi-filter-presets-VERSION.zip`
 - `power-bi-filter-presets-VERSION.crx`
@@ -43,12 +43,15 @@ Selected tooling: `crx3@2.0.0`
 
 ## Security Model
 
+- The tag-candidate workflow is the only workflow triggered directly by pushed `v*.*.*` tags.
+- The privileged release workflow runs only from trusted default-branch code via `workflow_run`.
 - Release workflow permissions are limited to `contents: write`.
-- Only pushed tags matching `v*.*.*` trigger the workflow.
 - Release logic rejects malformed and prerelease tags.
 - The tagged commit must be reachable from `origin/main`.
 - `package.json`, `manifest.json`, and `dist/manifest.json` must all match the tag version exactly.
 - The signing secret must come from `CRX_PRIVATE_KEY_BASE64`.
+- The unprivileged tag-candidate workflow does not receive the signing secret.
+- The target commit is built and tested before any signing secret is exposed, and signing happens in a separate job on a fresh runner.
 - The private key is decoded only into a temporary runner directory.
 - Decoded key permissions are restricted to `0600`.
 - The workflow never prints, caches, uploads, or commits key material.
@@ -125,7 +128,7 @@ git tag v0.2.0
 git push origin v0.2.0
 ```
 
-5. Monitor the GitHub Actions workflow and the draft release.
+5. Monitor the tag-candidate workflow, then the trusted release workflow and draft release.
 6. After success, install and spot-check the ZIP or CRX as appropriate for your environment.
 
 ## Artifact Verification
