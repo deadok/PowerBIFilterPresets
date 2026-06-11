@@ -1,0 +1,260 @@
+name: Release Extension
+
+on:
+  workflow_run:
+    workflows:
+      - Release Tag Candidate
+    types:
+      - completed
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      release_tag: ${{ steps.release_context.outputs.release_tag }}
+      release_version: ${{ steps.release_context.outputs.release_version }}
+      target_sha: ${{ steps.release_context.outputs.target_sha }}
+    steps:
+      - name: Checkout trusted workflow code
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Fetch origin/main and stable tags
+        run: |
+          set -euo pipefail
+          git fetch --force --no-tags origin main
+          git fetch --force --tags origin "refs/tags/v*"
+
+      - name: Derive trusted release context
+        id: release_context
+        shell: bash
+        run: |
+          set -euo pipefail
+          target_sha="${{ github.event.workflow_run.head_sha }}"
+          mapfile -t release_tags < <(git tag --points-at "$target_sha" --list 'v*.*.*' | sort)
+          if [ "${#release_tags[@]}" -ne 1 ]; then
+            echo "Expected exactly one stable release tag for ${target_sha}, found ${#release_tags[@]}." >&2
+            printf 'Tags: %s\n' "${release_tags[@]-<none>}" >&2
+            exit 1
+          fi
+
+          release_tag="${release_tags[0]}"
+          release_version="${release_tag#v}"
+          echo "target_sha=${target_sha}" >> "$GITHUB_OUTPUT"
+          echo "release_tag=${release_tag}" >> "$GITHUB_OUTPUT"
+          echo "release_version=${release_version}" >> "$GITHUB_OUTPUT"
+          echo "RELEASE_TAG=${release_tag}" >> "$GITHUB_ENV"
+          echo "RELEASE_VERSION=${release_version}" >> "$GITHUB_ENV"
+          echo "TARGET_SHA=${target_sha}" >> "$GITHUB_ENV"
+
+      - name: Install trusted tooling
+        run: |
+          set -euo pipefail
+          npm ci
+
+      - name: Check out target release commit
+        run: |
+          set -euo pipefail
+          git worktree add --detach "$RUNNER_TEMP/release-target" "$TARGET_SHA"
+
+      - name: Validate trusted release tag, versions, and ancestry
+        run: |
+          set -euo pipefail
+          npm run release:verify-source -- \
+            --tag "$RELEASE_TAG" \
+            --commit "$TARGET_SHA" \
+            --main-ref origin/main \
+            --require-reachability \
+            --package "$RUNNER_TEMP/release-target/package.json" \
+            --manifest "$RUNNER_TEMP/release-target/manifest.json"
+
+      - name: Install target dependencies
+        working-directory: ${{ runner.temp }}/release-target
+        run: npm ci
+
+      - name: Run target tests
+        working-directory: ${{ runner.temp }}/release-target
+        run: npm test
+
+      - name: Run target typecheck
+        working-directory: ${{ runner.temp }}/release-target
+        run: npm run typecheck
+
+      - name: Build target extension
+        working-directory: ${{ runner.temp }}/release-target
+        run: npm run build
+
+      - name: Validate built manifest and assets from trusted code
+        run: |
+          set -euo pipefail
+          npm run release:verify-built -- \
+            --tag "$RELEASE_TAG" \
+            --package "$RUNNER_TEMP/release-target/package.json" \
+            --manifest "$RUNNER_TEMP/release-target/manifest.json" \
+            --dist "$RUNNER_TEMP/release-target/dist"
+
+      - name: Package extension ZIP from trusted code
+        run: |
+          set -euo pipefail
+          npm run release:build-zip -- \
+            --version "$RELEASE_VERSION" \
+            --dist "$RUNNER_TEMP/release-target/dist" \
+            --out-dir "$RUNNER_TEMP/release-artifacts"
+
+      - name: Upload unsigned release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-release-${{ steps.release_context.outputs.target_sha }}
+          path: |
+            ${{ runner.temp }}/release-artifacts/power-bi-filter-presets-${{ steps.release_context.outputs.release_version }}.zip
+          if-no-files-found: error
+
+      - name: Clean up target worktree
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          git worktree remove --force "$RUNNER_TEMP/release-target" || true
+          git worktree prune
+
+  publish:
+    if: ${{ needs.build.result == 'success' }}
+    needs:
+      - build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout trusted workflow code
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install trusted tooling
+        run: npm ci
+
+      - name: Download unsigned release ZIP
+        uses: actions/download-artifact@v4
+        with:
+          name: unsigned-release-${{ needs.build.outputs.target_sha }}
+          path: ${{ runner.temp }}/release-artifacts
+
+      - name: Verify downloaded ZIP before signing
+        run: |
+          set -euo pipefail
+          npm run release:inspect -- \
+            --zip "$RUNNER_TEMP/release-artifacts/power-bi-filter-presets-${{ needs.build.outputs.release_version }}.zip"
+
+      - name: Decode CRX signing key
+        env:
+          CRX_PRIVATE_KEY_BASE64: ${{ secrets.CRX_PRIVATE_KEY_BASE64 }}
+        run: |
+          set -euo pipefail
+          key_dir="$(mktemp -d "${RUNNER_TEMP}/crx-signing.XXXXXX")"
+          key_path="${key_dir}/signing-key.pem"
+          echo "CRX_KEY_DIR=${key_dir}" >> "$GITHUB_ENV"
+          echo "CRX_KEY_PATH=${key_path}" >> "$GITHUB_ENV"
+          npm run release:write-key -- --output "$key_path"
+
+      - name: Sign CRX3 artifact
+        run: |
+          set -euo pipefail
+          npm run release:sign-crx -- \
+            --version "${{ needs.build.outputs.release_version }}" \
+            --zip "$RUNNER_TEMP/release-artifacts/power-bi-filter-presets-${{ needs.build.outputs.release_version }}.zip" \
+            --key "$CRX_KEY_PATH" \
+            --out-dir "$RUNNER_TEMP/release-artifacts"
+
+      - name: Generate SHA-256 checksums
+        run: |
+          set -euo pipefail
+          npm run release:checksums -- \
+            --zip "$RUNNER_TEMP/release-artifacts/power-bi-filter-presets-${{ needs.build.outputs.release_version }}.zip" \
+            --crx "$RUNNER_TEMP/release-artifacts/power-bi-filter-presets-${{ needs.build.outputs.release_version }}.crx" \
+            --output "$RUNNER_TEMP/release-artifacts/SHA256SUMS.txt"
+
+      - name: Validate packaged artifacts
+        run: |
+          set -euo pipefail
+          npm run release:inspect -- \
+            --zip "$RUNNER_TEMP/release-artifacts/power-bi-filter-presets-${{ needs.build.outputs.release_version }}.zip" \
+            --crx "$RUNNER_TEMP/release-artifacts/power-bi-filter-presets-${{ needs.build.outputs.release_version }}.crx" \
+            --checksums "$RUNNER_TEMP/release-artifacts/SHA256SUMS.txt"
+          (
+            cd "$RUNNER_TEMP/release-artifacts"
+            sha256sum -c SHA256SUMS.txt
+          )
+
+      - name: Remove stale draft release on rerun
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if existing_state="$(gh release view "${{ needs.build.outputs.release_tag }}" --json isDraft --jq '.isDraft' 2>/dev/null)"; then
+            if [ "$existing_state" = "true" ]; then
+              gh release delete "${{ needs.build.outputs.release_tag }}" --yes
+            else
+              echo "Published release already exists for ${{ needs.build.outputs.release_tag }}. Refusing to replace published artifacts." >&2
+              exit 1
+            fi
+          fi
+
+      - name: Create draft GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "${{ needs.build.outputs.release_tag }}" \
+            --draft \
+            --generate-notes \
+            --verify-tag \
+            --target "${{ needs.build.outputs.target_sha }}"
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release upload "${{ needs.build.outputs.release_tag }}" \
+            "$RUNNER_TEMP/release-artifacts/power-bi-filter-presets-${{ needs.build.outputs.release_version }}.zip" \
+            "$RUNNER_TEMP/release-artifacts/power-bi-filter-presets-${{ needs.build.outputs.release_version }}.crx" \
+            "$RUNNER_TEMP/release-artifacts/SHA256SUMS.txt"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release edit "${{ needs.build.outputs.release_tag }}" --draft=false
+
+      - name: Clean up private key material
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          if [ -n "${CRX_KEY_DIR:-}" ]; then
+            rm -rf "$CRX_KEY_DIR"
+          fi
