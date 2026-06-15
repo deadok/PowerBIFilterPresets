@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { FilterOperationResult, FilterPresetItem, Preset } from "../../src/shared/types";
+import type { ApplyFiltersResponse, FilterOperationResult, FilterPresetItem, Preset } from "../../src/shared/types";
 
 const testState = vi.hoisted(() => ({
   presets: [] as Preset[],
@@ -1328,28 +1328,6 @@ describe("popup", () => {
     expect(document.querySelector("#result")?.getAttribute("aria-live")).toBe("polite");
   });
 
-  it("renders user-correctable no-filters and no-results states as errors", async () => {
-    await mountPopup([preset("one", "Sales review")]);
-    testState.sendContentRequestToActiveTab.mockResolvedValueOnce({ ok: true, results: [] } as never);
-
-    click(document.querySelector("#save-current") as Element);
-
-    await vi.waitFor(() => {
-      expect(document.querySelector("#result")?.textContent).toBe("No filters returned.");
-    });
-    expect(resultLineText()).toEqual(["No filters returned."]);
-    expect(resultLineSeverities()).toEqual(["error"]);
-
-    testState.sendContentRequestToActiveTab.mockResolvedValueOnce({ ok: true, filters: [] } as never);
-    click(document.querySelector("#apply-preset") as Element);
-
-    await vi.waitFor(() => {
-      expect(document.querySelector("#result")?.textContent).toBe("No results returned.");
-    });
-    expect(resultLineText()).toEqual(["No results returned."]);
-    expect(resultLineSeverities()).toEqual(["error"]);
-  });
-
   it("keeps progress and successful messages normal and clears previous error styling", async () => {
     await mountPopup([preset("one", "Sales review")]);
     testState.sendContentRequestToActiveTab.mockResolvedValueOnce({ ok: false, error: "Capture failed." });
@@ -1362,7 +1340,7 @@ describe("popup", () => {
       expect(document.querySelector<HTMLButtonElement>("#apply-preset")?.disabled).toBe(false);
     });
 
-    let resolveApply: ((response: { ok: true; filters: FilterPresetItem[] }) => void) | undefined;
+    let resolveApply: ((response: ApplyFiltersResponse) => void) | undefined;
     testState.sendContentRequestToActiveTab.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
@@ -1375,9 +1353,9 @@ describe("popup", () => {
       expect(resultLineSeverities()).toEqual(["normal"]);
     });
 
-    resolveApply?.({ ok: true, filters: [] });
+    resolveApply?.({ ok: true, results: [] });
     await vi.waitFor(() => {
-      expect(document.querySelector("#result")?.textContent).toBe("No results returned.");
+      expect(document.querySelector("#result")?.textContent).toBe("No supported list filters found.");
     });
 
     click(document.querySelector("#export-preset") as Element);

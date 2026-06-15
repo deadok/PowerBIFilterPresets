@@ -1,11 +1,37 @@
 import { createPowerBiDomAdapter } from "./powerBiDomAdapter";
 import { parsePresetExport } from "./presetExportParse";
-import type { ContentRequest, ContentResponse, FilterOperationResult } from "../shared/types";
+import { decodeContentRequest } from "./contentRequestDecode";
+import type {
+  ApplyFiltersRequest,
+  ApplyFiltersResponse,
+  ContentRequest,
+  ContentRequestHandler,
+  ContentResponse,
+  FilterOperationResult,
+  ReadFiltersRequest,
+  ReadFiltersResponse
+} from "../shared/types";
 
 const LOG_PREFIX = "[Power BI Presets]";
 
 const adapter = createPowerBiDomAdapter(document);
 
+async function readFilters(): Promise<ReadFiltersResponse> {
+  return { ok: true, filters: await adapter.readListFilters() };
+}
+
+async function applyFilters(request: ApplyFiltersRequest): Promise<ApplyFiltersResponse> {
+  const results: FilterOperationResult[] = [];
+
+  for (const filter of request.filters) {
+    results.push(await adapter.applyListFilterSelection(filter.title, filter.selectedLabels));
+  }
+
+  return { ok: true, results };
+}
+
+function handleRequest(request: ReadFiltersRequest): Promise<ReadFiltersResponse>;
+function handleRequest(request: ApplyFiltersRequest): Promise<ApplyFiltersResponse>;
 async function handleRequest(request: ContentRequest): Promise<ContentResponse> {
   const ready = await adapter.waitForFilterControls();
   if (!ready) {
@@ -13,17 +39,11 @@ async function handleRequest(request: ContentRequest): Promise<ContentResponse> 
   }
 
   if (request.type === "READ_FILTERS") {
-    return { ok: true, filters: await adapter.readListFilters() };
+    return readFilters();
   }
 
   if (request.type === "APPLY_FILTERS") {
-    const results: FilterOperationResult[] = [];
-
-    for (const filter of request.filters) {
-      results.push(await adapter.applyListFilterSelection(filter.title, filter.selectedLabels));
-    }
-
-    return { ok: true, results };
+    return applyFilters(request);
   }
 
   return { ok: false, error: "Unsupported request." };
@@ -31,8 +51,8 @@ async function handleRequest(request: ContentRequest): Promise<ContentResponse> 
 
 export async function applyDebugPreset(
   detail: unknown,
-  requestHandler: (request: ContentRequest) => Promise<ContentResponse> = handleRequest
-): Promise<ContentResponse> {
+  requestHandler: (request: ApplyFiltersRequest) => Promise<ApplyFiltersResponse> = handleRequest
+): Promise<ApplyFiltersResponse> {
   const preset = parsePresetExport(detail);
   const response = await requestHandler({ type: "APPLY_FILTERS", filters: preset.filters });
   console.info(LOG_PREFIX, "Debug preset apply result:", response);
@@ -41,7 +61,7 @@ export async function applyDebugPreset(
 
 export function installDebugPresetHook(
   targetWindow: Window,
-  requestHandler: (request: ContentRequest) => Promise<ContentResponse> = handleRequest
+  requestHandler: ContentRequestHandler = handleRequest
 ): void {
   targetWindow.addEventListener("PowerBIFilterPresets:applyPreset", (event) => {
     const detail = (event as CustomEvent<{ presetExport?: unknown; requestId?: string }>).detail;
@@ -93,8 +113,19 @@ export function installDebugPresetHook(
 }
 
 if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
-  chrome.runtime.onMessage.addListener((request: ContentRequest, _sender, sendResponse) => {
-    handleRequest(request)
+  chrome.runtime.onMessage.addListener((value: unknown, _sender, sendResponse) => {
+    const request = decodeContentRequest(value);
+    if (!request) {
+      sendResponse({ ok: false, error: "Invalid content request." });
+      return false;
+    }
+
+    const response =
+      request.type === "READ_FILTERS"
+        ? handleRequest(request)
+        : handleRequest(request);
+
+    response
       .then(sendResponse)
       .catch((error: unknown) => {
         sendResponse({ ok: false, error: error instanceof Error ? error.message : "Unknown content script error." });

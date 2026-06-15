@@ -36,11 +36,32 @@ export type FilterOperationResult = {
   message: string;
 };
 
-export type ContentRequest =
-  | { type: "READ_FILTERS" }
-  | { type: "APPLY_FILTERS"; filters: FilterPresetItem[] };
+export type ReadFiltersRequest = { type: "READ_FILTERS" };
+export type ApplyFiltersRequest = { type: "APPLY_FILTERS"; filters: FilterPresetItem[] };
 
-export type ContentResponse =
-  | { ok: true; filters: FilterPresetItem[] }
-  | { ok: true; results: FilterOperationResult[] }
-  | { ok: false; error: string };
+export type ContentRequest = ReadFiltersRequest | ApplyFiltersRequest;
+
+export type ContentErrorResponse = { ok: false; error: string };
+export type ReadFiltersResponse = { ok: true; filters: FilterPresetItem[] } | ContentErrorResponse;
+export type ApplyFiltersResponse = { ok: true; results: FilterOperationResult[] } | ContentErrorResponse;
+
+export type ContentMessageMap = {
+  READ_FILTERS: {
+    request: ReadFiltersRequest;
+    response: ReadFiltersResponse;
+  };
+  APPLY_FILTERS: {
+    request: ApplyFiltersRequest;
+    response: ApplyFiltersResponse;
+  };
+};
+
+export type ContentResponseFor<Request extends ContentRequest> = ContentMessageMap[Request["type"]]["response"];
+export type ContentResponse = ContentResponseFor<ContentRequest>;
+
+export type SendContentRequest = {
+  (request: ReadFiltersRequest): Promise<ReadFiltersResponse>;
+  (request: ApplyFiltersRequest): Promise<ApplyFiltersResponse>;
+};
+
+export type ContentRequestHandler = SendContentRequest;
