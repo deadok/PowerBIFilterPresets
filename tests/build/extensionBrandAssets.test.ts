@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { join, resolve } from "node:path";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { buildExtensionForTest, type TestBuild } from "./buildExtension";
 
 type ExtensionManifest = {
   icons?: Record<string, string>;
@@ -17,6 +18,16 @@ const expectedIcons = {
 };
 
 describe("extension brand assets", () => {
+  let testBuild: TestBuild;
+
+  beforeAll(async () => {
+    testBuild = await buildExtensionForTest();
+  });
+
+  afterAll(() => {
+    testBuild?.cleanup();
+  });
+
   it("declares the complete icon set for the extension and toolbar action", () => {
     const manifest = JSON.parse(
       readFileSync(resolve(process.cwd(), "manifest.json"), "utf8")
@@ -32,9 +43,9 @@ describe("extension brand assets", () => {
     }
   });
 
-  it("emits a manifest whose brand asset references exist in dist", () => {
+  it("emits a manifest whose brand asset references exist in the current build output", () => {
     const manifest = JSON.parse(
-      readFileSync(resolve(process.cwd(), "dist/manifest.json"), "utf8")
+      readFileSync(join(testBuild.outDir, "manifest.json"), "utf8")
     ) as ExtensionManifest;
     const assetPaths = [
       ...Object.values(manifest.icons ?? {}),
@@ -45,7 +56,7 @@ describe("extension brand assets", () => {
     expect(manifest.icons).toEqual(expectedIcons);
     expect(manifest.action?.default_icon).toEqual(expectedIcons);
     for (const assetPath of new Set(assetPaths)) {
-      expect(existsSync(resolve(process.cwd(), "dist", assetPath)), assetPath).toBe(true);
+      expect(existsSync(join(testBuild.outDir, assetPath)), assetPath).toBe(true);
     }
   });
 });
