@@ -19,6 +19,9 @@ function createFakeStorage() {
   };
 }
 
+const pageKey = "https://portal/reports/sales";
+const storageKey = `page:${pageKey}`;
+
 const samplePreset: Preset = {
   id: "preset_1",
   name: "Sales review",
@@ -26,6 +29,14 @@ const samplePreset: Preset = {
   updatedAt: "2026-05-28T10:00:00.000Z",
   filters: [{ title: "Region", type: "list", selectedLabels: ["EMEA"] }]
 };
+
+function storedCollection(presets: unknown = [samplePreset]): Record<string, unknown> {
+  return {
+    schemaVersion: 1,
+    pageKey,
+    presets
+  };
+}
 
 describe("createPresetStore", () => {
   beforeEach(() => {
@@ -42,6 +53,96 @@ describe("createPresetStore", () => {
       pageKey: "https://portal/reports/sales",
       presets: []
     });
+  });
+
+  it.each([
+    ["null root", null],
+    ["primitive root", "invalid"],
+    ["array root", []],
+    ["array masquerading as a collection", Object.assign([], storedCollection())],
+    ["invalid collection version", { ...storedCollection(), schemaVersion: 2 }],
+    ["missing page key", { schemaVersion: 1, presets: [samplePreset] }],
+    ["invalid page key", { ...storedCollection(), pageKey: 42 }],
+    ["mismatched page key", { ...storedCollection(), pageKey: "https://portal/reports/other" }],
+    ["non-array presets", storedCollection({ preset_1: samplePreset })]
+  ])("returns an empty collection for %s", async (_description, storedValue) => {
+    const storage = createFakeStorage();
+    storage.data[storageKey] = storedValue;
+    const store = createPresetStore(storage);
+
+    await expect(store.getPageCollection(pageKey)).resolves.toEqual({
+      schemaVersion: 1,
+      pageKey,
+      presets: []
+    });
+  });
+
+  it.each([
+    ["non-object preset", null],
+    ["array masquerading as a preset", Object.assign([], samplePreset)],
+    ["invalid preset id", { ...samplePreset, id: 7 }],
+    ["empty preset id", { ...samplePreset, id: " " }],
+    ["invalid preset name", { ...samplePreset, name: false }],
+    ["empty preset name", { ...samplePreset, name: "" }],
+    ["invalid created timestamp", { ...samplePreset, createdAt: null }],
+    ["invalid updated timestamp", { ...samplePreset, updatedAt: 42 }],
+    ["non-array filters", { ...samplePreset, filters: {} }]
+  ])("returns an empty collection for %s", async (_description, invalidPreset) => {
+    const storage = createFakeStorage();
+    storage.data[storageKey] = storedCollection([invalidPreset]);
+    const store = createPresetStore(storage);
+
+    await expect(store.getPageCollection(pageKey)).resolves.toMatchObject({ presets: [] });
+  });
+
+  it.each([
+    ["non-object filter", null],
+    [
+      "array masquerading as a filter",
+      Object.assign([], { title: "Region", type: "list", selectedLabels: ["EMEA"] })
+    ],
+    ["invalid filter title", { title: 4, type: "list", selectedLabels: ["EMEA"] }],
+    ["empty filter title", { title: " ", type: "list", selectedLabels: ["EMEA"] }],
+    ["unsupported filter kind", { title: "Region", type: "range", selectedLabels: ["EMEA"] }],
+    ["non-array selected labels", { title: "Region", type: "list", selectedLabels: "EMEA" }],
+    ["non-string selected label", { title: "Region", type: "list", selectedLabels: ["EMEA", 4] }],
+    ["empty selected label", { title: "Region", type: "list", selectedLabels: [""] }]
+  ])("returns an empty collection for %s", async (_description, invalidFilter) => {
+    const storage = createFakeStorage();
+    storage.data[storageKey] = storedCollection([{ ...samplePreset, filters: [invalidFilter] }]);
+    const store = createPresetStore(storage);
+
+    await expect(store.getPageCollection(pageKey)).resolves.toMatchObject({ presets: [] });
+  });
+
+  it("rejects the whole collection when valid and invalid presets are mixed", async () => {
+    const storage = createFakeStorage();
+    storage.data[storageKey] = storedCollection([samplePreset, { ...samplePreset, id: null }]);
+    const store = createPresetStore(storage);
+
+    await expect(store.getPageCollection(pageKey)).resolves.toMatchObject({ presets: [] });
+    expect(storage.set).not.toHaveBeenCalled();
+  });
+
+  it("loads a valid current-version collection unchanged", async () => {
+    const storage = createFakeStorage();
+    const collection = storedCollection([
+      samplePreset,
+      {
+        ...samplePreset,
+        id: "preset_2",
+        filters: [{ title: "Region", type: "list", selectedLabels: [] }]
+      },
+      {
+        ...samplePreset,
+        id: "preset_3",
+        filters: []
+      }
+    ]);
+    storage.data[storageKey] = collection;
+    const store = createPresetStore(storage);
+
+    await expect(store.getPageCollection(pageKey)).resolves.toEqual(collection);
   });
 
   it("saves presets by page key", async () => {

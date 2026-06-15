@@ -1,4 +1,4 @@
-import type { PagePresetCollection, Preset } from "./types";
+import type { FilterPresetItem, PagePresetCollection, Preset } from "./types";
 import { isPresetRevisionMatch } from "./presetRevision";
 
 type StorageArea = {
@@ -51,13 +51,78 @@ function emptyCollection(pageKey: string): PagePresetCollection {
   };
 }
 
-function isPagePresetCollection(value: unknown, pageKey: string): value is PagePresetCollection {
-  if (!value || typeof value !== "object") {
-    return false;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function decodeFilter(value: unknown): FilterPresetItem | undefined {
+  if (!isRecord(value) || !isNonEmptyString(value.title) || value.type !== "list") {
+    return undefined;
+  }
+  if (!Array.isArray(value.selectedLabels) || !value.selectedLabels.every(isNonEmptyString)) {
+    return undefined;
   }
 
-  const candidate = value as PagePresetCollection;
-  return candidate.schemaVersion === 1 && candidate.pageKey === pageKey && Array.isArray(candidate.presets);
+  return {
+    title: value.title,
+    type: "list",
+    selectedLabels: [...value.selectedLabels]
+  };
+}
+
+function decodePreset(value: unknown): Preset | undefined {
+  if (
+    !isRecord(value) ||
+    !isNonEmptyString(value.id) ||
+    !isNonEmptyString(value.name) ||
+    !isNonEmptyString(value.createdAt) ||
+    !isNonEmptyString(value.updatedAt) ||
+    !Array.isArray(value.filters)
+  ) {
+    return undefined;
+  }
+
+  const filters: FilterPresetItem[] = [];
+  for (const filterValue of value.filters) {
+    const filter = decodeFilter(filterValue);
+    if (!filter) {
+      return undefined;
+    }
+    filters.push(filter);
+  }
+
+  return {
+    id: value.id,
+    name: value.name,
+    createdAt: value.createdAt,
+    updatedAt: value.updatedAt,
+    filters
+  };
+}
+
+function decodePagePresetCollection(value: unknown, pageKey: string): PagePresetCollection | undefined {
+  if (!isRecord(value) || value.schemaVersion !== 1 || value.pageKey !== pageKey || !Array.isArray(value.presets)) {
+    return undefined;
+  }
+
+  const presets: Preset[] = [];
+  for (const presetValue of value.presets) {
+    const preset = decodePreset(presetValue);
+    if (!preset) {
+      return undefined;
+    }
+    presets.push(preset);
+  }
+
+  return {
+    schemaVersion: 1,
+    pageKey,
+    presets
+  };
 }
 
 export function createPresetStore(storage: StorageArea = chrome.storage.local): PresetStore {
@@ -77,9 +142,10 @@ export function createPresetStore(storage: StorageArea = chrome.storage.local): 
       const key = storageKey(pageKey);
       const result = await storage.get(key);
       const value = result[key];
+      const collection = decodePagePresetCollection(value, pageKey);
 
-      if (isPagePresetCollection(value, pageKey)) {
-        return value;
+      if (collection) {
+        return collection;
       }
 
       return emptyCollection(pageKey);
