@@ -158,7 +158,7 @@ jobs:
         run: npm ci
 
       - name: Download unsigned release ZIP
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: unsigned-release-${{ needs.build.outputs.target_sha }}
           path: ${{ runner.temp }}/release-artifacts
