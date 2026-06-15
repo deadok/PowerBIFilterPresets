@@ -315,6 +315,16 @@ select:disabled {
   font-size: 13px;
 }
 
+.result-line {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.result-line[data-severity="error"] {
+  color: #a12622;
+  font-weight: 600;
+}
+
 .modal-backdrop {
   position: fixed;
   z-index: 10;
@@ -732,5 +742,9 @@ select:disabled {
   button:focus-visible,
   select:focus-visible {
     outline-color: Highlight;
+  }
+
+  .result-line[data-severity="error"] {
+    color: Mark;
   }
 }
