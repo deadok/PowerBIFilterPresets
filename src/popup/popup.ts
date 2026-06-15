@@ -29,13 +29,13 @@ import {
 import { serializePresetExport } from "../shared/presetExport";
 import { createPresetRevision } from "../shared/presetRevision";
 import { createPresetStore, type PresetStore } from "../shared/presetStore";
-import type { ContentRequest, ContentResponse, FilterPresetItem, PagePresetCollection, Preset } from "../shared/types";
+import type { FilterPresetItem, PagePresetCollection, Preset, SendContentRequest } from "../shared/types";
 import { normalizePageUrl } from "../shared/url";
 
 type PopupDependencies = {
   store: PresetStore;
   getActiveTab: typeof getActiveTab;
-  sendContentRequest: (request: ContentRequest) => Promise<ContentResponse>;
+  sendContentRequest: SendContentRequest;
   readClipboardText: () => Promise<string>;
   writeClipboard: (text: string) => Promise<void>;
   now: () => Date;

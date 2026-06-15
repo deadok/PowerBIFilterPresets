@@ -1,16 +1,25 @@
 import { findBestFrameForFilters } from "./frameTarget";
-import type { ContentRequest, ContentResponse, FilterPresetItem } from "../shared/types";
+import { decodeContentResponse } from "./contentResponseDecode";
+import type {
+  ApplyFiltersRequest,
+  ApplyFiltersResponse,
+  ContentRequest,
+  ContentResponseFor,
+  FilterPresetItem,
+  ReadFiltersRequest,
+  ReadFiltersResponse
+} from "../shared/types";
 
 export type ActiveTab = {
   id: number;
   url: string;
 };
 
-type SendMessage = (
+type SendMessage = <Request extends ContentRequest>(
   tabId: number,
-  request: ContentRequest,
-  optionsOrCallback: chrome.tabs.MessageSendOptions | ((response?: ContentResponse) => void),
-  callback?: (response?: ContentResponse) => void
+  request: Request,
+  optionsOrCallback: chrome.tabs.MessageSendOptions | ((response?: unknown) => void),
+  callback?: (response?: unknown) => void
 ) => void;
 
 type ContentMessagingDependencies = {
@@ -38,7 +47,16 @@ function defaultDependencies(): ContentMessagingDependencies {
   return {
     getActiveTab,
     findBestFrameForFilters,
-    sendMessage: chrome.tabs.sendMessage.bind(chrome.tabs) as SendMessage,
+    sendMessage(tabId, request, optionsOrCallback, callback) {
+      if (typeof optionsOrCallback === "function") {
+        chrome.tabs.sendMessage(tabId, request, optionsOrCallback);
+        return;
+      }
+      if (!callback) {
+        throw new Error("Content message callback is required.");
+      }
+      chrome.tabs.sendMessage(tabId, request, optionsOrCallback, callback);
+    },
     executeScript: chrome.scripting?.executeScript.bind(chrome.scripting),
     getLastError: () => chrome.runtime.lastError,
     contentScriptFile: CONTENT_SCRIPT_FILE
@@ -49,26 +67,32 @@ function isMissingReceiverError(error: chrome.runtime.LastError | undefined): bo
   return error?.message?.includes("Receiving end does not exist") ?? false;
 }
 
-function sendMessageToFrame(
+function sendMessageToFrame<Request extends ContentRequest>(
   tabId: number,
   frameId: number | undefined,
-  request: ContentRequest,
+  request: Request,
   dependencies: ContentMessagingDependencies
-): Promise<ContentResponse> {
+): Promise<ContentResponseFor<Request>> {
   return new Promise((resolve, reject) => {
-    const handleResponse = (response: ContentResponse | undefined): void => {
+    const handleResponse = (response: unknown): void => {
       const runtimeError = dependencies.getLastError();
       if (runtimeError) {
         reject(new Error(runtimeError.message));
         return;
       }
 
-      if (!response) {
+      if (response === undefined) {
         reject(new Error("No response from content script."));
         return;
       }
 
-      resolve(response);
+      const decodedResponse = decodeContentResponse(request, response);
+      if (!decodedResponse) {
+        reject(new Error("Invalid response from content script."));
+        return;
+      }
+
+      resolve(decodedResponse);
     };
 
     if (frameId === undefined) {
@@ -202,10 +226,18 @@ function mergeDomFiltersWithPowerBiApiState(
   });
 }
 
-export async function sendContentRequestToActiveTab(
-  request: ContentRequest,
+export function sendContentRequestToActiveTab(
+  request: ReadFiltersRequest,
+  dependencies?: ContentMessagingDependencies
+): Promise<ReadFiltersResponse>;
+export function sendContentRequestToActiveTab(
+  request: ApplyFiltersRequest,
+  dependencies?: ContentMessagingDependencies
+): Promise<ApplyFiltersResponse>;
+export async function sendContentRequestToActiveTab<Request extends ContentRequest>(
+  request: Request,
   dependencies: ContentMessagingDependencies = defaultDependencies()
-): Promise<ContentResponse> {
+): Promise<ContentResponseFor<Request>> {
   const tab = await dependencies.getActiveTab();
   const frameId = await dependencies.findBestFrameForFilters(tab.id);
 
