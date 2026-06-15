@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { FilterPresetItem, Preset } from "../../src/shared/types";
+import type { FilterOperationResult, FilterPresetItem, Preset } from "../../src/shared/types";
 
 const testState = vi.hoisted(() => ({
   presets: [] as Preset[],
@@ -70,6 +70,22 @@ async function mountPopup(presets: Preset[] = [preset("one", "Sales review")]): 
 
 function click(element: Element): void {
   element.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+}
+
+function resultLines(): HTMLElement[] {
+  return Array.from(document.querySelectorAll<HTMLElement>("#result .result-line"));
+}
+
+function resultLineText(): string[] {
+  return resultLines().map((line) => line.textContent ?? "");
+}
+
+function resultLineSeverities(): Array<string | null> {
+  return resultLines().map((line) => line.getAttribute("data-severity"));
+}
+
+function applyResult(title: string, status: FilterOperationResult["status"], message: string): FilterOperationResult {
+  return { title, status, message };
 }
 
 function selectPreset(id: string): HTMLSelectElement {
@@ -1284,6 +1300,170 @@ describe("popup", () => {
         filters: [filter("Region", ["EMEA"])]
       });
     });
+  });
+
+  it("renders a no-selection apply error in the main log", async () => {
+    await mountPopup([]);
+
+    click(document.querySelector("#apply-preset") as Element);
+
+    await vi.waitFor(() => {
+      expect(document.querySelector("#result")?.textContent).toBe("Select a preset first.");
+    });
+    expect(resultLineText()).toEqual(["Select a preset first."]);
+    expect(resultLineSeverities()).toEqual(["error"]);
+  });
+
+  it("renders failed capture responses as errors and preserves the polite live region", async () => {
+    await mountPopup([]);
+    testState.sendContentRequestToActiveTab.mockResolvedValueOnce({ ok: false, error: "Capture failed." });
+
+    click(document.querySelector("#save-current") as Element);
+
+    await vi.waitFor(() => {
+      expect(document.querySelector("#result")?.textContent).toBe("Capture failed.");
+    });
+    expect(resultLineText()).toEqual(["Capture failed."]);
+    expect(resultLineSeverities()).toEqual(["error"]);
+    expect(document.querySelector("#result")?.getAttribute("aria-live")).toBe("polite");
+  });
+
+  it("renders user-correctable no-filters and no-results states as errors", async () => {
+    await mountPopup([preset("one", "Sales review")]);
+    testState.sendContentRequestToActiveTab.mockResolvedValueOnce({ ok: true, results: [] } as never);
+
+    click(document.querySelector("#save-current") as Element);
+
+    await vi.waitFor(() => {
+      expect(document.querySelector("#result")?.textContent).toBe("No filters returned.");
+    });
+    expect(resultLineText()).toEqual(["No filters returned."]);
+    expect(resultLineSeverities()).toEqual(["error"]);
+
+    testState.sendContentRequestToActiveTab.mockResolvedValueOnce({ ok: true, filters: [] } as never);
+    click(document.querySelector("#apply-preset") as Element);
+
+    await vi.waitFor(() => {
+      expect(document.querySelector("#result")?.textContent).toBe("No results returned.");
+    });
+    expect(resultLineText()).toEqual(["No results returned."]);
+    expect(resultLineSeverities()).toEqual(["error"]);
+  });
+
+  it("keeps progress and successful messages normal and clears previous error styling", async () => {
+    await mountPopup([preset("one", "Sales review")]);
+    testState.sendContentRequestToActiveTab.mockResolvedValueOnce({ ok: false, error: "Capture failed." });
+
+    click(document.querySelector("#save-current") as Element);
+    await vi.waitFor(() => {
+      expect(resultLineSeverities()).toEqual(["error"]);
+    });
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLButtonElement>("#apply-preset")?.disabled).toBe(false);
+    });
+
+    let resolveApply: ((response: { ok: true; filters: FilterPresetItem[] }) => void) | undefined;
+    testState.sendContentRequestToActiveTab.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveApply = resolve as typeof resolveApply;
+        })
+    );
+    click(document.querySelector("#apply-preset") as Element);
+    await vi.waitFor(() => {
+      expect(resultLineText()).toEqual(["Applying preset..."]);
+      expect(resultLineSeverities()).toEqual(["normal"]);
+    });
+
+    resolveApply?.({ ok: true, filters: [] });
+    await vi.waitFor(() => {
+      expect(document.querySelector("#result")?.textContent).toBe("No results returned.");
+    });
+
+    click(document.querySelector("#export-preset") as Element);
+    await vi.waitFor(() => {
+      expect(document.querySelector("#result")?.textContent).toBe("Preset JSON copied.");
+    });
+    expect(resultLineText()).toEqual(["Preset JSON copied."]);
+    expect(resultLineSeverities()).toEqual(["normal"]);
+  });
+
+  it("renders apply output with per-line severity, preserved order, and exact text", async () => {
+    await mountPopup([preset("one", "Sales review")]);
+    const results: FilterOperationResult[] = [
+      applyResult("Region", "applied", "Applied 2 values."),
+      applyResult("Country", "missing_value", "Missing values: Brazil."),
+      applyResult("Department", "timeout", "Timed out while scanning dropdown values."),
+      applyResult("Product", "applied", "<b>Applied</b> literally.")
+    ];
+    testState.sendContentRequestToActiveTab.mockResolvedValueOnce({ ok: true, results });
+
+    click(document.querySelector("#apply-preset") as Element);
+
+    await vi.waitFor(() => {
+      expect(document.querySelector("#result")?.textContent).toBe(
+        "Applied 2 filters. 2 filters need attention.\nRegion: Applied 2 values.\nCountry: Missing values: Brazil.\nDepartment: Timed out while scanning dropdown values.\nProduct: <b>Applied</b> literally."
+      );
+    });
+    expect(resultLineText()).toEqual([
+      "Applied 2 filters. 2 filters need attention.",
+      "Region: Applied 2 values.",
+      "Country: Missing values: Brazil.",
+      "Department: Timed out while scanning dropdown values.",
+      "Product: <b>Applied</b> literally."
+    ]);
+    expect(resultLineSeverities()).toEqual(["normal", "normal", "error", "error", "normal"]);
+    expect(document.querySelector("#result b")).toBeNull();
+  });
+
+  it("renders all-success apply output as normal lines", async () => {
+    await mountPopup([preset("one", "Sales review")]);
+    testState.sendContentRequestToActiveTab.mockResolvedValueOnce({
+      ok: true,
+      results: [
+        applyResult("Region", "applied", "Applied 2 values."),
+        applyResult("Product", "applied", "Applied 1 value.")
+      ]
+    });
+
+    click(document.querySelector("#apply-preset") as Element);
+
+    await vi.waitFor(() => {
+      expect(resultLineSeverities()).toEqual(["normal", "normal", "normal"]);
+    });
+    expect(resultLineText()).toEqual([
+      "Applied 2 filters.",
+      "Region: Applied 2 values.",
+      "Product: Applied 1 value."
+    ]);
+  });
+
+  it("renders all failure apply statuses as error detail lines while keeping the summary normal", async () => {
+    await mountPopup([preset("one", "Sales review")]);
+    testState.sendContentRequestToActiveTab.mockResolvedValueOnce({
+      ok: true,
+      results: [
+        applyResult("Region", "missing_filter", "Filter was not found."),
+        applyResult("Country", "missing_value", "Missing values: Brazil."),
+        applyResult("Store", "ambiguous_filter", "More than one filter matched this title."),
+        applyResult("Department", "timeout", "Timed out while scanning dropdown values."),
+        applyResult("Category", "interaction_failed", "Power BI did not accept the requested interaction.")
+      ]
+    });
+
+    click(document.querySelector("#apply-preset") as Element);
+
+    await vi.waitFor(() => {
+      expect(resultLineSeverities()).toEqual(["normal", "error", "error", "error", "error", "error"]);
+    });
+    expect(resultLineText()).toEqual([
+      "Applied 0 filters. 5 filters need attention.",
+      "Region: Filter was not found.",
+      "Country: Missing values: Brazil.",
+      "Store: More than one filter matched this title.",
+      "Department: Timed out while scanning dropdown values.",
+      "Category: Power BI did not accept the requested interaction."
+    ]);
   });
 
   it("submits Save and Edit preset from the name field with Enter", async () => {

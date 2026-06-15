@@ -3,6 +3,7 @@ import popupMarkup from "./popup.html?raw";
 import { getActiveTab, sendContentRequestToActiveTab } from "./contentMessaging";
 import { createPopupDialogState } from "./popupDialogState";
 import { normalizePresetName, validatePresetName } from "./presetNameValidation";
+import { createApplyResultLines, createResultLine, renderResult } from "./resultLog";
 import {
   clearAllReviewFilters,
   createReviewDraft,
@@ -28,7 +29,6 @@ import {
 import { serializePresetExport } from "../shared/presetExport";
 import { createPresetRevision } from "../shared/presetRevision";
 import { createPresetStore, type PresetStore } from "../shared/presetStore";
-import { summarizeResults } from "../shared/resultSummary";
 import type { ContentRequest, ContentResponse, FilterPresetItem, PagePresetCollection, Preset } from "../shared/types";
 import { normalizePageUrl } from "../shared/url";
 
@@ -84,11 +84,6 @@ function createPreset(filters: FilterPresetItem[], name: string, dependencies: P
   };
 }
 
-function renderResult(element: HTMLOutputElement, text: string): void {
-  element.value = text;
-  element.textContent = text;
-}
-
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Popup action failed.";
 }
@@ -110,7 +105,7 @@ function isPresetNameConflict(error: unknown): boolean {
 
 function runPopupAction(element: HTMLOutputElement, action: () => Promise<void>): void {
   void action().catch((error: unknown) => {
-    renderResult(element, errorMessage(error));
+    renderResult(element, createResultLine(errorMessage(error), "error"));
   });
 }
 
@@ -790,7 +785,7 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     const preset = selectedPreset();
     const index = preset ? currentPresets.findIndex((candidate) => candidate.id === preset.id) : -1;
     if (!preset || index < 0) {
-      renderResult(result, "Select a preset first.");
+      renderResult(result, createResultLine("Select a preset first.", "error"));
       updateSelectedActionStates();
       return;
     }
@@ -827,19 +822,19 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
       return;
     }
     setCaptureBusy(true);
-    renderResult(result, "Reading filters...");
+    renderResult(result, createResultLine("Reading filters...", "normal"));
 
     void dependencies
       .sendContentRequest({ type: "READ_FILTERS" })
       .then((response) => {
         if (!response.ok || !("filters" in response)) {
-          renderResult(result, response.ok ? "No filters returned." : response.error);
+          renderResult(result, createResultLine(response.ok ? "No filters returned." : response.error, "error"));
           return;
         }
         openSaveDialog(response.filters);
       })
       .catch((error: unknown) => {
-        renderResult(result, errorMessage(error));
+        renderResult(result, createResultLine(errorMessage(error), "error"));
       })
       .finally(() => {
         setCaptureBusy(false);
@@ -915,7 +910,7 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
         renderCollection(nextCollection, preset.id);
         closeSaveDialog(false);
         saveDialog.removeAttribute("aria-busy");
-        renderResult(result, `Saved ${includedFilters.length} filters.`);
+        renderResult(result, createResultLine(`Saved ${includedFilters.length} filters.`, "normal"));
         applyButton.focus();
       })
       .catch((error: unknown) => {
@@ -944,21 +939,20 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     runPopupAction(result, async () => {
       const preset = await storedSelectedPreset();
       if (!preset) {
-        renderResult(result, "Select a preset first.");
+        renderResult(result, createResultLine("Select a preset first.", "error"));
         updateSelectedActionStates();
         return;
       }
 
-      renderResult(result, "Applying preset...");
+      renderResult(result, createResultLine("Applying preset...", "normal"));
       const response = await dependencies.sendContentRequest({ type: "APPLY_FILTERS", filters: preset.filters });
 
       if (!response.ok || !("results" in response)) {
-        renderResult(result, response.ok ? "No results returned." : response.error);
+        renderResult(result, createResultLine(response.ok ? "No results returned." : response.error, "error"));
         return;
       }
 
-      const details = response.results.map((item) => `${item.title}: ${item.message}`).join("\n");
-      renderResult(result, `${summarizeResults(response.results)}\n${details}`);
+      renderResult(result, createApplyResultLines(response.results));
     });
   });
 
@@ -966,13 +960,13 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     runPopupAction(result, async () => {
       const preset = await storedSelectedPreset();
       if (!preset) {
-        renderResult(result, "Select a preset first.");
+        renderResult(result, createResultLine("Select a preset first.", "error"));
         updateSelectedActionStates();
         return;
       }
 
       await dependencies.writeClipboard(serializePresetExport(preset));
-      renderResult(result, "Preset JSON copied.");
+      renderResult(result, createResultLine("Preset JSON copied.", "normal"));
     });
   });
 
@@ -1186,7 +1180,7 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
         renderCollection(nextCollection, preset.id);
         closeCreateDialog(false);
         createDialog.removeAttribute("aria-busy");
-        renderResult(result, "Preset created.");
+        renderResult(result, createResultLine("Preset created.", "normal"));
         applyButton.focus();
       })
       .catch((error: unknown) => {
@@ -1215,7 +1209,7 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
       const selectedId = presetSelect.value;
       const preset = await storedSelectedPreset();
       if (!preset || preset.id !== selectedId || presetSelect.value !== selectedId) {
-        renderResult(result, "Select a preset first.");
+        renderResult(result, createResultLine("Select a preset first.", "error"));
         updateSelectedActionStates();
         return;
       }
@@ -1386,7 +1380,7 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
         renderCollection(nextCollection, currentDraft.originalPreset.id);
         closeEditDialog(false);
         editDialog.removeAttribute("aria-busy");
-        renderResult(result, "Preset updated.");
+        renderResult(result, createResultLine("Preset updated.", "normal"));
         renameButton.focus();
       })
       .catch((error: unknown) => {
@@ -1476,7 +1470,7 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
         const preferredSelectionId = selectionAfterDeletion(collection, deletion);
         renderCollection(collection, preferredSelectionId);
         closeDeleteDialog(false);
-        renderResult(result, "Preset deleted.");
+        renderResult(result, createResultLine("Preset deleted.", "normal"));
 
         if (currentPresets.length > 0) {
           presetSelect.focus();
