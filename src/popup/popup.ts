@@ -6,15 +6,7 @@ import { getPopupElements } from "./popupElements";
 import { createPopupDialogState } from "./popupDialogState";
 import { normalizePresetName, validatePresetName } from "./presetNameValidation";
 import { createApplyResultLines, createResultLine, renderResult } from "./resultLog";
-import {
-  clearAllReviewFilters,
-  createReviewDraft,
-  projectIncludedFilters,
-  selectAllReviewFilters,
-  setReviewFilterExpanded,
-  setReviewFilterIncluded,
-  type ReviewDraft
-} from "./reviewDraft";
+import { createSaveReviewDialogController } from "./saveReviewDialogController";
 import {
   createCreatePresetDocument,
   createEditPresetDocument,
@@ -31,7 +23,7 @@ import {
 import { serializePresetExport } from "../shared/presetExport";
 import { createPresetRevision } from "../shared/presetRevision";
 import { createPresetStore, type PresetStore } from "../shared/presetStore";
-import type { FilterPresetItem, PagePresetCollection, Preset, SendContentRequest } from "../shared/types";
+import type { PagePresetCollection, Preset, SendContentRequest } from "../shared/types";
 import { normalizePageUrl } from "../shared/url";
 
 type PopupDependencies = {
@@ -64,17 +56,6 @@ type CreateDraft = {
 };
 
 type ActiveDialog = "save" | "create" | "createReset" | "edit" | "editReset" | "delete";
-
-function createPreset(filters: FilterPresetItem[], name: string, dependencies: PopupDependencies): Preset {
-  const now = dependencies.now().toISOString();
-  return {
-    id: dependencies.randomUUID(),
-    name,
-    createdAt: now,
-    updatedAt: now,
-    filters
-  };
-}
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Popup action failed.";
@@ -172,11 +153,9 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
   const tab = await dependencies.getActiveTab();
   const pageKey = normalizePageUrl(tab.url);
   let currentPresets: Preset[] = [];
-  let reviewDraft: ReviewDraft | undefined;
   let createDraft: CreateDraft | undefined;
   let editDraft: EditDraft | undefined;
   let captureInFlight = false;
-  let saveInFlight = false;
   let createInFlight = false;
   let editInFlight = false;
   let createValidationTimer: number | undefined;
@@ -290,6 +269,36 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     errorMessage
   });
 
+  const saveReviewDialogController = createSaveReviewDialogController({
+    elements: {
+      triggerButton: saveButton,
+      applyButton,
+      dialog: saveDialog,
+      nameInput: saveNameInput,
+      nameError: saveNameError,
+      storageError: saveStorageError,
+      reviewList,
+      reviewEmpty,
+      selectionCount: reviewSelectionCount,
+      selectionGuidance: reviewSelectionGuidance,
+      selectAllButton,
+      clearAllButton,
+      cancelButton: cancelSaveButton,
+      confirmButton: confirmSaveButton
+    },
+    now: dependencies.now,
+    randomUUID: dependencies.randomUUID,
+    getCollection: () => dependencies.store.getPageCollection(pageKey),
+    savePreset: (preset, options) => dependencies.store.savePreset(pageKey, preset, options),
+    openDialog: () => openDialog("save"),
+    closeDialog: () => closeDialog("save"),
+    renderCollection,
+    renderSaved: (filterCount) => {
+      renderResult(result, createResultLine(`Saved ${filterCount} filters.`, "normal"));
+    },
+    errorMessage
+  });
+
   function createProvisionalPreset(name = ""): Preset {
     const now = dependencies.now().toISOString();
     return {
@@ -299,25 +308,6 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
       updatedAt: now,
       filters: []
     };
-  }
-
-  function updateReviewSelectionState(): void {
-    const includedCount = reviewDraft?.filters.filter((item) => item.included).length ?? 0;
-    const totalCount = reviewDraft?.filters.length ?? 0;
-    reviewSelectionCount.textContent = `${includedCount} of ${totalCount} filters selected`;
-    reviewSelectionGuidance.textContent = includedCount === 0 ? "Select at least one filter." : "";
-    confirmSaveButton.disabled = includedCount === 0 || saveInFlight;
-    selectAllButton.disabled = totalCount === 0 || saveInFlight;
-    clearAllButton.disabled = totalCount === 0 || saveInFlight;
-  }
-
-  function setReviewControlsDisabled(disabled: boolean): void {
-    saveNameInput.disabled = disabled;
-    for (const control of Array.from(
-      reviewList.querySelectorAll<HTMLInputElement | HTMLButtonElement>("input, button")
-    )) {
-      control.disabled = disabled;
-    }
   }
 
   function setCaptureBusy(busy: boolean): void {
@@ -332,119 +322,6 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     } else {
       updateSelectedActionStates();
     }
-  }
-
-  function renderReviewFilters(): void {
-    reviewList.replaceChildren();
-    const filters = reviewDraft?.filters ?? [];
-    reviewList.hidden = filters.length === 0;
-    reviewEmpty.hidden = filters.length > 0;
-
-    for (const item of filters) {
-      const article = document.createElement("article");
-      article.className = "review-filter";
-      article.dataset.capturedIndex = String(item.capturedIndex);
-
-      const row = document.createElement("div");
-      row.className = "review-filter-row";
-
-      const checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.checked = item.included;
-      checkbox.setAttribute("aria-label", `Include ${item.filter.title}`);
-
-      const disclosure = document.createElement("button");
-      disclosure.type = "button";
-      disclosure.className = "review-filter-disclosure";
-      disclosure.setAttribute("aria-label", `Show values for ${item.filter.title}`);
-      disclosure.setAttribute("aria-expanded", String(item.expanded));
-      disclosure.setAttribute("aria-controls", `review-values-${item.capturedIndex}`);
-      disclosure.innerHTML =
-        '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"></path></svg>';
-
-      const title = document.createElement("span");
-      title.className = "review-filter-title";
-      title.textContent = item.filter.title;
-
-      const count = document.createElement("span");
-      count.className = "review-filter-count";
-      count.textContent = String(item.filter.selectedLabels.length);
-      count.setAttribute(
-        "aria-label",
-        `${item.filter.selectedLabels.length} selected ${item.filter.selectedLabels.length === 1 ? "value" : "values"}`
-      );
-
-      const values = document.createElement("ul");
-      values.id = `review-values-${item.capturedIndex}`;
-      values.className = "review-filter-values";
-      values.hidden = !item.expanded;
-      for (const label of item.filter.selectedLabels) {
-        const value = document.createElement("li");
-        value.textContent = label;
-        values.append(value);
-      }
-
-      const toggleExpansion = (): void => {
-        if (!reviewDraft || saveInFlight) {
-          return;
-        }
-        const nextExpanded = disclosure.getAttribute("aria-expanded") !== "true";
-        reviewDraft = setReviewFilterExpanded(reviewDraft, item.capturedIndex, nextExpanded);
-        disclosure.setAttribute("aria-expanded", String(nextExpanded));
-        disclosure.setAttribute("aria-label", `${nextExpanded ? "Hide" : "Show"} values for ${item.filter.title}`);
-        values.hidden = !nextExpanded;
-      };
-
-      checkbox.addEventListener("click", (event) => event.stopPropagation());
-      checkbox.addEventListener("change", () => {
-        if (!reviewDraft || saveInFlight) {
-          return;
-        }
-        reviewDraft = setReviewFilterIncluded(reviewDraft, item.capturedIndex, checkbox.checked);
-        updateReviewSelectionState();
-      });
-      disclosure.addEventListener("click", (event) => {
-        event.stopPropagation();
-        toggleExpansion();
-      });
-      row.addEventListener("click", toggleExpansion);
-
-      row.append(checkbox, disclosure, title, count);
-      article.append(row, values);
-      reviewList.append(article);
-    }
-
-    updateReviewSelectionState();
-  }
-
-  function closeSaveDialog(restoreFocus: boolean): void {
-    closeDialog("save");
-    reviewDraft = undefined;
-    saveInFlight = false;
-    saveNameInput.disabled = false;
-    saveNameInput.value = "";
-    setMessage(saveNameError, "");
-    setMessage(saveStorageError, "");
-    cancelSaveButton.disabled = false;
-    if (restoreFocus) {
-      saveButton.focus();
-    }
-  }
-
-  function openSaveDialog(filters: FilterPresetItem[]): boolean {
-    reviewDraft = createReviewDraft(filters);
-    saveNameInput.value = `Preset ${dependencies.now().toLocaleString()}`;
-    setMessage(saveNameError, "");
-    setMessage(saveStorageError, "");
-    cancelSaveButton.disabled = false;
-    renderReviewFilters();
-    if (!openDialog("save")) {
-      reviewDraft = undefined;
-      return false;
-    }
-    saveNameInput.focus();
-    saveNameInput.select();
-    return true;
   }
 
   function renderCreateValidationMessage(message: string, invalid: boolean): void {
@@ -790,107 +667,13 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
           renderResult(result, createResultLine(response.ok ? "No filters returned." : response.error, "error"));
           return;
         }
-        openSaveDialog(response.filters);
+        saveReviewDialogController.open(response.filters);
       })
       .catch((error: unknown) => {
         renderResult(result, createResultLine(errorMessage(error), "error"));
       })
       .finally(() => {
         setCaptureBusy(false);
-      });
-  });
-
-  selectAllButton.addEventListener("click", () => {
-    if (!reviewDraft || saveInFlight) {
-      return;
-    }
-    reviewDraft = selectAllReviewFilters(reviewDraft);
-    for (const checkbox of Array.from(reviewList.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))) {
-      checkbox.checked = true;
-    }
-    updateReviewSelectionState();
-  });
-
-  clearAllButton.addEventListener("click", () => {
-    if (!reviewDraft || saveInFlight) {
-      return;
-    }
-    reviewDraft = clearAllReviewFilters(reviewDraft);
-    for (const checkbox of Array.from(reviewList.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))) {
-      checkbox.checked = false;
-    }
-    updateReviewSelectionState();
-  });
-
-  saveNameInput.addEventListener("input", () => {
-    setMessage(saveNameError, "");
-    setMessage(saveStorageError, "");
-  });
-
-  cancelSaveButton.addEventListener("click", () => {
-    if (!saveInFlight) {
-      closeSaveDialog(true);
-    }
-  });
-
-  confirmSaveButton.addEventListener("click", () => {
-    if (!reviewDraft || saveInFlight) {
-      return;
-    }
-    const includedFilters = projectIncludedFilters(reviewDraft);
-    if (includedFilters.length === 0) {
-      updateReviewSelectionState();
-      return;
-    }
-
-    saveInFlight = true;
-    setReviewControlsDisabled(true);
-    cancelSaveButton.disabled = true;
-    confirmSaveButton.disabled = true;
-    saveDialog.setAttribute("aria-busy", "true");
-    setMessage(saveNameError, "");
-    setMessage(saveStorageError, "");
-    let focusNameAfterSubmit = false;
-
-    void dependencies.store
-      .getPageCollection(pageKey)
-      .then(async (collection) => {
-        const validation = validatePresetName(saveNameInput.value, collection);
-        if (!validation.valid) {
-          setMessage(saveNameError, validation.error);
-          focusNameAfterSubmit = true;
-          return;
-        }
-
-        const preset = createPreset(includedFilters, validation.name, dependencies);
-        const nextCollection = await dependencies.store.savePreset(pageKey, preset, {
-          uniqueNormalizedName: normalizePresetName(validation.name)
-        });
-        renderCollection(nextCollection, preset.id);
-        closeSaveDialog(false);
-        saveDialog.removeAttribute("aria-busy");
-        renderResult(result, createResultLine(`Saved ${includedFilters.length} filters.`, "normal"));
-        applyButton.focus();
-      })
-      .catch((error: unknown) => {
-        if (isPresetNameConflict(error)) {
-          setMessage(saveNameError, errorMessage(error));
-          focusNameAfterSubmit = true;
-        } else {
-          setMessage(saveStorageError, errorMessage(error));
-        }
-      })
-      .finally(() => {
-        if (dialogState.active === "save") {
-          saveInFlight = false;
-          setReviewControlsDisabled(false);
-          saveDialog.removeAttribute("aria-busy");
-          cancelSaveButton.disabled = false;
-          updateReviewSelectionState();
-          if (focusNameAfterSubmit) {
-            saveNameInput.focus();
-          }
-        }
       });
   });
 
@@ -1225,9 +1008,9 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
   });
 
   saveNameInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && !saveInFlight) {
+    if (event.key === "Enter" && !saveReviewDialogController.isInFlight()) {
       event.preventDefault();
-      confirmSaveButton.click();
+      saveReviewDialogController.confirm();
     }
   });
 
@@ -1427,13 +1210,17 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     }
 
     if (event.key === "Escape") {
-      const operationInFlight = saveInFlight || createInFlight || editInFlight || deleteDialogController.isInFlight();
+      const operationInFlight =
+        saveReviewDialogController.isInFlight() ||
+        createInFlight ||
+        editInFlight ||
+        deleteDialogController.isInFlight();
       event.preventDefault();
       if (operationInFlight) {
         return;
       }
       if (dialogState.active === "save") {
-        closeSaveDialog(true);
+        saveReviewDialogController.close(true);
       } else if (dialogState.active === "create") {
         closeCreateDialog(true);
       } else if (dialogState.active === "createReset") {
