@@ -17,6 +17,7 @@ import {
   type ListControl,
   type SlicerControl
 } from "./powerBiDiscovery";
+import { activateElement, closeDropdownOpenedForRead } from "./powerBiInteraction";
 
 type PowerBiDomAdapter = {
   waitForFilterControls(options?: { timeoutMs?: number; intervalMs?: number }): Promise<boolean>;
@@ -68,87 +69,12 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-function dispatchMouseEvent(element: HTMLElement, type: string): boolean {
-  const EventConstructor =
-    type.startsWith("pointer") && typeof element.ownerDocument.defaultView?.PointerEvent === "function"
-      ? element.ownerDocument.defaultView.PointerEvent
-      : element.ownerDocument.defaultView?.MouseEvent;
-  if (typeof EventConstructor === "function") {
-    element.dispatchEvent(new EventConstructor(type, { bubbles: true, cancelable: true }));
-    return true;
-  }
-
-  if (typeof element.ownerDocument.createEvent !== "function") {
-    return false;
-  }
-
-  const event = element.ownerDocument.createEvent("MouseEvents");
-  event.initMouseEvent(
-    type,
-    true,
-    true,
-    element.ownerDocument.defaultView ?? window,
-    0,
-    0,
-    0,
-    0,
-    0,
-    false,
-    false,
-    false,
-    false,
-    0,
-    null
-  );
-  element.dispatchEvent(event);
-  return true;
-}
-
-function dispatchKeyboardEvent(document: Document, type: string, key: string): void {
-  const EventConstructor = document.defaultView?.KeyboardEvent;
-  if (typeof EventConstructor === "function") {
-    document.dispatchEvent(new EventConstructor(type, { key, bubbles: true, cancelable: true }));
-    return;
-  }
-
-  const event = document.createEvent("Events");
-  event.initEvent(type, true, true);
-  Object.defineProperty(event, "key", { configurable: true, value: key });
-  document.dispatchEvent(event);
-}
-
-function activateElement(element: HTMLElement, options: { preferMouseEvents?: boolean } = {}): void {
-  if (!options.preferMouseEvents && typeof element.click === "function") {
-    element.click();
-    return;
-  }
-
-  const dispatched = [
-    dispatchMouseEvent(element, "pointerdown"),
-    dispatchMouseEvent(element, "mousedown"),
-    dispatchMouseEvent(element, "pointerup"),
-    dispatchMouseEvent(element, "mouseup"),
-    dispatchMouseEvent(element, "click")
-  ].some(Boolean);
-
-  if (!dispatched && typeof element.click === "function") {
-    element.click();
-  }
-}
-
-async function closeDropdownOpenedForRead(combobox: HTMLElement, options: { title?: string } = {}): Promise<void> {
-  if (options.title) {
-    console.debug(LOG_PREFIX, "Closing dropdown", { title: options.title, key: "Escape" });
-  }
-  activateElement(combobox, { preferMouseEvents: true });
-  await delay(0);
-
-  dispatchKeyboardEvent(combobox.ownerDocument, "keydown", "Escape");
-  await delay(0);
-
-  if (options.title) {
-    console.debug(LOG_PREFIX, "Closed dropdown", { title: options.title, key: "Escape" });
-  }
+function closeSlicerDropdown(combobox: HTMLElement, options: { title?: string } = {}): Promise<void> {
+  return closeDropdownOpenedForRead(combobox, {
+    delay,
+    logPrefix: LOG_PREFIX,
+    title: options.title
+  });
 }
 
 async function resolveSlicerOptions(
@@ -815,7 +741,7 @@ async function selectedLabelsForControl(root: ParentNode, control: ListControl):
     return selectedLabelsFromComboboxSummary(control);
   } finally {
     if (openedCombobox) {
-      await closeDropdownOpenedForRead(openedCombobox);
+      await closeSlicerDropdown(openedCombobox);
     }
   }
 }
@@ -1035,7 +961,7 @@ export function createPowerBiDomAdapter(root: ParentNode = document): PowerBiDom
         };
       } finally {
         if (openedCombobox) {
-          await closeDropdownOpenedForRead(openedCombobox, { title });
+          await closeSlicerDropdown(openedCombobox, { title });
         }
       }
     }
