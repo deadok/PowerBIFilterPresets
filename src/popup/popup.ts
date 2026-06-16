@@ -1,6 +1,7 @@
 import "./popup.css";
 import popupMarkup from "./popup.html?raw";
 import { getActiveTab, sendContentRequestToActiveTab } from "./contentMessaging";
+import { createDeleteDialogController } from "./deleteDialogController";
 import { getPopupElements } from "./popupElements";
 import { createPopupDialogState } from "./popupDialogState";
 import { normalizePresetName, validatePresetName } from "./presetNameValidation";
@@ -41,14 +42,6 @@ type PopupDependencies = {
   writeClipboard: (text: string) => Promise<void>;
   now: () => Date;
   randomUUID: () => string;
-};
-
-type PendingDeletion = {
-  id: string;
-  name: string;
-  index: number;
-  nextId?: string;
-  previousId?: string;
 };
 
 type EditDraft = {
@@ -182,12 +175,10 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
   let reviewDraft: ReviewDraft | undefined;
   let createDraft: CreateDraft | undefined;
   let editDraft: EditDraft | undefined;
-  let pendingDeletion: PendingDeletion | undefined;
   let captureInFlight = false;
   let saveInFlight = false;
   let createInFlight = false;
   let editInFlight = false;
-  let deleteInFlight = false;
   let createValidationTimer: number | undefined;
   let createValidationToken = 0;
   let editValidationTimer: number | undefined;
@@ -270,6 +261,34 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
       modalBackdrop.classList.remove("review-backdrop");
     }
   }
+
+  const deleteDialogController = createDeleteDialogController({
+    elements: {
+      triggerButton: deleteButton,
+      presetSelect,
+      saveButton,
+      dialog: deleteDialog,
+      presetName: deletePresetName,
+      error: deleteError,
+      cancelButton: cancelDeleteButton,
+      confirmButton: confirmDeleteButton
+    },
+    getCurrentPresets: () => currentPresets,
+    getSelectedPreset: selectedPreset,
+    isOpenBlocked: () => captureInFlight || Boolean(dialogState.active),
+    openDialog: () => openDialog("delete"),
+    closeDialog: () => closeDialog("delete"),
+    renderMissingSelection: () => {
+      renderResult(result, createResultLine("Select a preset first.", "error"));
+    },
+    updateSelectedActionStates,
+    deletePreset: (presetId) => dependencies.store.deletePreset(pageKey, presetId),
+    renderCollection,
+    renderDeleted: () => {
+      renderResult(result, createResultLine("Preset deleted.", "normal"));
+    },
+    errorMessage
+  });
 
   function createProvisionalPreset(name = ""): Preset {
     const now = dependencies.now().toISOString();
@@ -755,60 +774,6 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
       (editResetRestoreFocusTarget ?? resetEditJsonButton).focus();
     }
     editResetRestoreFocusTarget = undefined;
-  }
-
-  function closeDeleteDialog(restoreTriggerFocus: boolean): void {
-    closeDialog("delete");
-    pendingDeletion = undefined;
-    setMessage(deleteError, "");
-    cancelDeleteButton.disabled = false;
-    confirmDeleteButton.disabled = false;
-    deleteInFlight = false;
-    deleteDialog.removeAttribute("aria-busy");
-
-    if (restoreTriggerFocus) {
-      deleteButton.focus();
-    }
-  }
-
-  function openDeleteDialog(): void {
-    if (captureInFlight || dialogState.active || pendingDeletion) {
-      return;
-    }
-
-    const preset = selectedPreset();
-    const index = preset ? currentPresets.findIndex((candidate) => candidate.id === preset.id) : -1;
-    if (!preset || index < 0) {
-      renderResult(result, createResultLine("Select a preset first.", "error"));
-      updateSelectedActionStates();
-      return;
-    }
-
-    pendingDeletion = {
-      id: preset.id,
-      name: preset.name,
-      index,
-      nextId: currentPresets[index + 1]?.id,
-      previousId: currentPresets[index - 1]?.id
-    };
-    deletePresetName.textContent = `“${preset.name}”`;
-    setMessage(deleteError, "");
-    if (!openDialog("delete")) {
-      pendingDeletion = undefined;
-      return;
-    }
-    cancelDeleteButton.focus();
-  }
-
-  function selectionAfterDeletion(collection: PagePresetCollection, deletion: PendingDeletion): string | undefined {
-    const availableIds = new Set(collection.presets.map((preset) => preset.id));
-    if (deletion.nextId && availableIds.has(deletion.nextId)) {
-      return deletion.nextId;
-    }
-    if (deletion.previousId && availableIds.has(deletion.previousId)) {
-      return deletion.previousId;
-    }
-    return collection.presets[Math.min(deletion.index, collection.presets.length - 1)]?.id;
   }
 
   saveButton.addEventListener("click", () => {
@@ -1439,48 +1404,11 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     editJsonInput.focus();
   });
 
-  deleteButton.addEventListener("click", openDeleteDialog);
+  deleteButton.addEventListener("click", deleteDialogController.open);
   cancelDeleteButton.addEventListener("click", () => {
-    if (!deleteInFlight) {
-      closeDeleteDialog(true);
-    }
+    deleteDialogController.close(true);
   });
-  confirmDeleteButton.addEventListener("click", () => {
-    if (!pendingDeletion || deleteInFlight) {
-      return;
-    }
-
-    const deletion = pendingDeletion;
-    deleteInFlight = true;
-    cancelDeleteButton.disabled = true;
-    confirmDeleteButton.disabled = true;
-    deleteDialog.setAttribute("aria-busy", "true");
-    deleteDialog.focus();
-    setMessage(deleteError, "");
-
-    void dependencies.store
-      .deletePreset(pageKey, deletion.id)
-      .then((collection) => {
-        const preferredSelectionId = selectionAfterDeletion(collection, deletion);
-        renderCollection(collection, preferredSelectionId);
-        closeDeleteDialog(false);
-        renderResult(result, createResultLine("Preset deleted.", "normal"));
-
-        if (currentPresets.length > 0) {
-          presetSelect.focus();
-        } else {
-          saveButton.focus();
-        }
-      })
-      .catch((error: unknown) => {
-        deleteInFlight = false;
-        deleteDialog.removeAttribute("aria-busy");
-        cancelDeleteButton.disabled = false;
-        confirmDeleteButton.disabled = false;
-        setMessage(deleteError, errorMessage(error));
-        cancelDeleteButton.focus();
-      });
-  });
+  confirmDeleteButton.addEventListener("click", deleteDialogController.confirm);
 
   presetSelect.addEventListener("change", updateSelectedActionStates);
 
@@ -1499,7 +1427,7 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     }
 
     if (event.key === "Escape") {
-      const operationInFlight = saveInFlight || createInFlight || editInFlight || deleteInFlight;
+      const operationInFlight = saveInFlight || createInFlight || editInFlight || deleteDialogController.isInFlight();
       event.preventDefault();
       if (operationInFlight) {
         return;
@@ -1515,7 +1443,7 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
       } else if (dialogState.active === "editReset") {
         closeResetDialog(true);
       } else {
-        closeDeleteDialog(true);
+        deleteDialogController.close(true);
       }
       return;
     }
