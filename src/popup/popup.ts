@@ -4,6 +4,15 @@ import { getActiveTab, sendContentRequestToActiveTab } from "./contentMessaging"
 import { createDeleteDialogController } from "./deleteDialogController";
 import { getPopupElements } from "./popupElements";
 import { createPopupDialogState } from "./popupDialogState";
+import {
+  applyPresetJsonValidation,
+  createPresetJsonDraft,
+  markPresetJsonNameChanged,
+  markPresetJsonTextChanged,
+  resetPresetJsonNameSync,
+  type CreatePresetJsonDraft,
+  type EditPresetJsonDraft
+} from "./presetJsonDraft";
 import { normalizePresetName, validatePresetName } from "./presetNameValidation";
 import { createApplyResultLines, createResultLine, renderResult } from "./resultLog";
 import { createSaveReviewDialogController } from "./saveReviewDialogController";
@@ -34,25 +43,6 @@ type PopupDependencies = {
   writeClipboard: (text: string) => Promise<void>;
   now: () => Date;
   randomUUID: () => string;
-};
-
-type EditDraft = {
-  originalPreset: Preset;
-  originalRevision: string;
-  currentName: string;
-  jsonText: string;
-  validation: EditPresetJsonResult;
-  nameSyncPending: boolean;
-};
-
-type CreateDraft = {
-  provisionalPreset: Preset;
-  currentName: string;
-  jsonText: string;
-  validation: CreatePresetJsonResult;
-  nameManual: boolean;
-  nameSyncPending: boolean;
-  sessionToken: number;
 };
 
 type ActiveDialog = "save" | "create" | "createReset" | "edit" | "editReset" | "delete";
@@ -153,8 +143,8 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
   const tab = await dependencies.getActiveTab();
   const pageKey = normalizePageUrl(tab.url);
   let currentPresets: Preset[] = [];
-  let createDraft: CreateDraft | undefined;
-  let editDraft: EditDraft | undefined;
+  let createDraft: CreatePresetJsonDraft | undefined;
+  let editDraft: EditPresetJsonDraft | undefined;
   let captureInFlight = false;
   let createInFlight = false;
   let editInFlight = false;
@@ -351,12 +341,11 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
       return;
     }
 
-    createDraft.validation = validation;
+    createDraft = applyPresetJsonValidation(createDraft, validation, nextText);
     if (nextText !== undefined) {
-      createDraft.jsonText = nextText;
       createJsonInput.value = nextText;
     } else {
-      createDraft.jsonText = createJsonInput.value;
+      createDraft = markPresetJsonTextChanged(createDraft, createJsonInput.value);
     }
 
     if (validation.valid) {
@@ -381,13 +370,17 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     let authoritativeName = createDraft.currentName;
     let allowNameMismatch = allowPendingNameSync;
     const imported = sanitizeImportedPresetDocument(nextText, {
-      provisionalPreset: createDraft.provisionalPreset
+      provisionalPreset: createDraft.preset
     });
     if (imported.valid) {
       nextText = imported.text;
       if (!createDraft.nameManual) {
         authoritativeName = imported.adoptedName;
-        createDraft.currentName = authoritativeName;
+        createDraft = markPresetJsonNameChanged(createDraft, {
+          name: authoritativeName,
+          nameManual: false,
+          synchronizedText: nextText
+        });
         createNameInput.value = authoritativeName;
       } else {
         allowNameMismatch = true;
@@ -395,13 +388,13 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     }
 
     const validation = validateCreatePresetJson(nextText, {
-      provisionalPreset: createDraft.provisionalPreset,
+      provisionalPreset: createDraft.preset,
       authoritativeName,
       allowNameMismatch
     });
 
     if (validation.valid) {
-      createDraft.nameSyncPending = false;
+      createDraft = resetPresetJsonNameSync(createDraft);
       applyCreateValidationResult(validation, validation.synchronizedText);
     } else {
       applyCreateValidationResult(validation, imported.valid ? imported.text : undefined);
@@ -450,8 +443,9 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
   function openCreateDialog(): void {
     const provisionalPreset = createProvisionalPreset();
     const jsonText = createCreatePresetDocument(provisionalPreset);
-    createDraft = {
-      provisionalPreset,
+    createDraft = createPresetJsonDraft({
+      kind: "create",
+      preset: provisionalPreset,
       currentName: "",
       jsonText,
       validation: validateCreatePresetJson(jsonText, {
@@ -459,9 +453,8 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
         authoritativeName: ""
       }),
       nameManual: false,
-      nameSyncPending: false,
       sessionToken: ++createSessionToken
-    };
+    });
 
     createNameInput.value = "";
     createJsonInput.value = jsonText;
@@ -527,12 +520,11 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
       return;
     }
 
-    editDraft.validation = validation;
+    editDraft = applyPresetJsonValidation(editDraft, validation, nextText);
     if (nextText !== undefined) {
-      editDraft.jsonText = nextText;
       editJsonInput.value = nextText;
     } else {
-      editDraft.jsonText = editJsonInput.value;
+      editDraft = markPresetJsonTextChanged(editDraft, editJsonInput.value);
     }
 
     if (validation.valid) {
@@ -553,13 +545,13 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     }
 
     const validation = validateEditPresetJson(editJsonInput.value, {
-      preset: editDraft.originalPreset,
+      preset: editDraft.preset,
       authoritativeName: editDraft.currentName,
       allowNameMismatch: allowPendingNameSync
     });
 
     if (validation.valid) {
-      editDraft.nameSyncPending = false;
+      editDraft = resetPresetJsonNameSync(editDraft);
       applyEditValidationResult(validation, validation.synchronizedText);
     } else {
       applyEditValidationResult(validation);
@@ -602,17 +594,17 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
 
   function openEditDialog(preset: Preset): void {
     const jsonText = createEditPresetDocument(preset);
-    editDraft = {
-      originalPreset: preset,
+    editDraft = createPresetJsonDraft({
+      kind: "edit",
+      preset,
       originalRevision: createPresetRevision(preset),
       currentName: preset.name.trim(),
       jsonText,
       validation: validateEditPresetJson(jsonText, {
         preset,
         authoritativeName: preset.name.trim()
-      }),
-      nameSyncPending: false
-    };
+      })
+    });
 
     editNameInput.value = editDraft.currentName;
     editJsonInput.value = jsonText;
@@ -724,47 +716,34 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
       return;
     }
 
-    createDraft.currentName = createNameInput.value;
-    createDraft.nameManual = true;
+    const nextCreateName = createNameInput.value;
     setMessage(createNameError, "");
     setMessage(createSaveError, "");
 
     if (createDraft.validation.valid) {
-      applyCreateValidationResult(
+      const synchronizedText = resetCreatePresetJson(
         {
-          ...createDraft.validation,
-          normalizedPreset: {
-            ...createDraft.validation.normalizedPreset,
-            name: createDraft.currentName
-          },
-          synchronizedText: resetCreatePresetJson(
-            {
-              ...createDraft.provisionalPreset,
-              filters: createDraft.validation.filters
-            },
-            createDraft.currentName
-          ),
-          formattedText: resetCreatePresetJson(
-            {
-              ...createDraft.provisionalPreset,
-              filters: createDraft.validation.filters
-            },
-            createDraft.currentName
-          )
+          ...createDraft.preset,
+          filters: createDraft.validation.filters
         },
-        resetCreatePresetJson(
-          {
-            ...createDraft.provisionalPreset,
-            filters: createDraft.validation.filters
-          },
-          createDraft.currentName
-        )
+        nextCreateName
       );
-      createDraft.nameSyncPending = false;
+      createDraft = markPresetJsonNameChanged(createDraft, {
+        name: nextCreateName,
+        nameManual: true,
+        synchronizedText
+      });
+      applyCreateValidationResult(
+        createDraft.validation,
+        synchronizedText
+      );
       return;
     }
 
-    createDraft.nameSyncPending = true;
+    createDraft = markPresetJsonNameChanged(createDraft, {
+      name: nextCreateName,
+      nameManual: true
+    });
   });
 
   createNameInput.addEventListener("keydown", (event) => {
@@ -779,7 +758,7 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
       return;
     }
 
-    createDraft.jsonText = createJsonInput.value;
+    createDraft = markPresetJsonTextChanged(createDraft, createJsonInput.value);
     setMessage(createSaveError, "");
     scheduleCreateValidation();
   });
@@ -804,7 +783,7 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
         }
 
         const imported = sanitizeImportedPresetDocument(text, {
-          provisionalPreset: createDraft.provisionalPreset
+          provisionalPreset: createDraft.preset
         });
         if (!imported.valid) {
           renderCreateValidationMessage(imported.error.message, true);
@@ -812,20 +791,27 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
         }
 
         if (!createDraft.nameManual) {
-          createDraft.currentName = imported.adoptedName;
+          createDraft = markPresetJsonNameChanged(createDraft, {
+            name: imported.adoptedName,
+            nameManual: false,
+            synchronizedText: imported.text
+          });
           createNameInput.value = imported.adoptedName;
         }
 
         const validation = validateCreatePresetJson(imported.text, {
-          provisionalPreset: createDraft.provisionalPreset,
+          provisionalPreset: createDraft.preset,
           authoritativeName: createDraft.currentName,
           allowNameMismatch: createDraft.nameManual
         });
         if (validation.valid) {
-          createDraft.nameSyncPending = false;
+          createDraft = resetPresetJsonNameSync(createDraft);
           applyCreateValidationResult(validation, validation.synchronizedText);
         } else {
-          createDraft.nameSyncPending = true;
+          createDraft = markPresetJsonNameChanged(createDraft, {
+            name: createDraft.currentName,
+            nameManual: createDraft.nameManual
+          });
           applyCreateValidationResult(validation, imported.text);
         }
       })
@@ -843,7 +829,7 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     }
 
     const formattedText = formatCreatePresetJson(createJsonInput.value, {
-      provisionalPreset: createDraft.provisionalPreset,
+      provisionalPreset: createDraft.preset,
       authoritativeName: createDraft.currentName
     });
     applyCreateValidationResult(createDraft.validation, formattedText);
@@ -854,11 +840,11 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
       return;
     }
 
-    const resetText = createCreatePresetDocument(createDraft.provisionalPreset);
+    const resetText = createCreatePresetDocument(createDraft.preset);
     if (createJsonInput.value === resetText && createNameInput.value.length === 0 && !createDraft.nameManual) {
       applyCreateValidationResult(
         validateCreatePresetJson(resetText, {
-          provisionalPreset: createDraft.provisionalPreset,
+          provisionalPreset: createDraft.preset,
           authoritativeName: ""
         }),
         resetText
@@ -890,9 +876,11 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
       return;
     }
 
-    currentDraft.nameSyncPending = currentDraft.nameSyncPending || currentDraft.currentName !== collectionValidation.name;
-    currentDraft.currentName = collectionValidation.name;
-    currentDraft.nameManual = true;
+    createDraft = markPresetJsonNameChanged(currentDraft, {
+      name: collectionValidation.name,
+      nameManual: true,
+      nameSyncPending: currentDraft.nameSyncPending || currentDraft.currentName !== collectionValidation.name
+    });
     createNameInput.value = collectionValidation.name;
     const jsonValidation = validateCreateDraftNow(true);
     if (!jsonValidation || !jsonValidation.valid) {
@@ -965,46 +953,30 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
       return;
     }
 
-    editDraft.currentName = editNameInput.value;
+    const nextEditName = editNameInput.value;
     setMessage(editNameError, "");
     setMessage(editSaveError, "");
 
     if (editDraft.validation.valid) {
-      applyEditValidationResult(
+      const synchronizedText = resetEditPresetJson(
         {
-          ...editDraft.validation,
-          normalizedPreset: {
-            ...editDraft.validation.normalizedPreset,
-            name: editDraft.currentName
-          },
-          synchronizedText: resetEditPresetJson(
-            {
-              ...editDraft.originalPreset,
-              filters: editDraft.validation.filters
-            },
-            editDraft.currentName
-          ),
-          formattedText: resetEditPresetJson(
-            {
-              ...editDraft.originalPreset,
-              filters: editDraft.validation.filters
-            },
-            editDraft.currentName
-          )
+          ...editDraft.preset,
+          filters: editDraft.validation.filters
         },
-        resetEditPresetJson(
-          {
-            ...editDraft.originalPreset,
-            filters: editDraft.validation.filters
-          },
-          editDraft.currentName
-        )
+        nextEditName
       );
-      editDraft.nameSyncPending = false;
+      editDraft = markPresetJsonNameChanged(editDraft, {
+        name: nextEditName,
+        synchronizedText
+      });
+      applyEditValidationResult(
+        editDraft.validation,
+        synchronizedText
+      );
       return;
     }
 
-    editDraft.nameSyncPending = true;
+    editDraft = markPresetJsonNameChanged(editDraft, { name: nextEditName });
   });
 
   saveNameInput.addEventListener("keydown", (event) => {
@@ -1026,7 +998,7 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
       return;
     }
 
-    editDraft.jsonText = editJsonInput.value;
+    editDraft = markPresetJsonTextChanged(editDraft, editJsonInput.value);
     setMessage(editSaveError, "");
     scheduleEditValidation();
   });
@@ -1037,7 +1009,7 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     }
 
     const formattedText = formatEditPresetJson(editJsonInput.value, {
-      preset: editDraft.originalPreset,
+      preset: editDraft.preset,
       authoritativeName: editDraft.currentName
     });
     applyEditValidationResult(editDraft.validation, formattedText);
@@ -1048,11 +1020,11 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
       return;
     }
 
-    if (editJsonInput.value === resetEditPresetJson(editDraft.originalPreset, editDraft.currentName)) {
-      const resetText = resetEditPresetJson(editDraft.originalPreset, editDraft.currentName);
+    if (editJsonInput.value === resetEditPresetJson(editDraft.preset, editDraft.currentName)) {
+      const resetText = resetEditPresetJson(editDraft.preset, editDraft.currentName);
       applyEditValidationResult(
         validateEditPresetJson(resetText, {
-          preset: editDraft.originalPreset,
+          preset: editDraft.preset,
           authoritativeName: editDraft.currentName
         }),
         resetText
@@ -1077,19 +1049,21 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
 
     clearEditValidationTimer();
     const currentDraft = editDraft;
-    const collectionValidation = validatePresetName(editNameInput.value, { schemaVersion: 1, pageKey, presets: currentPresets }, currentDraft.originalPreset.id);
+    const collectionValidation = validatePresetName(editNameInput.value, { schemaVersion: 1, pageKey, presets: currentPresets }, currentDraft.preset.id);
     if (!collectionValidation.valid) {
       setMessage(editNameError, collectionValidation.error);
       editNameInput.focus();
       return;
     }
 
-    currentDraft.nameSyncPending = currentDraft.nameSyncPending || currentDraft.currentName !== collectionValidation.name;
-    currentDraft.currentName = collectionValidation.name;
+    editDraft = markPresetJsonNameChanged(currentDraft, {
+      name: collectionValidation.name,
+      nameSyncPending: currentDraft.nameSyncPending || currentDraft.currentName !== collectionValidation.name
+    });
     const jsonValidation = validateEditPresetJson(editJsonInput.value, {
-      preset: currentDraft.originalPreset,
-      authoritativeName: currentDraft.currentName,
-      allowNameMismatch: currentDraft.nameSyncPending
+      preset: currentDraft.preset,
+      authoritativeName: collectionValidation.name,
+      allowNameMismatch: editDraft.nameSyncPending
     });
     if (!jsonValidation.valid) {
       applyEditValidationResult(jsonValidation);
@@ -1119,7 +1093,7 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
         }
       )
       .then((nextCollection) => {
-        renderCollection(nextCollection, currentDraft.originalPreset.id);
+        renderCollection(nextCollection, currentDraft.preset.id);
         closeEditDialog(false);
         editDialog.removeAttribute("aria-busy");
         renderResult(result, createResultLine("Preset updated.", "normal"));
@@ -1151,15 +1125,19 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     if (!createDraft) {
       return;
     }
-    const resetText = createCreatePresetDocument(createDraft.provisionalPreset);
+    const resetText = createCreatePresetDocument(createDraft.preset);
     closeCreateResetDialog(false);
-    createDraft.currentName = "";
-    createDraft.nameManual = false;
-    createDraft.nameSyncPending = false;
+    createDraft = resetPresetJsonNameSync(
+      markPresetJsonNameChanged(createDraft, {
+        name: "",
+        nameManual: false,
+        synchronizedText: resetText
+      })
+    );
     createNameInput.value = "";
     applyCreateValidationResult(
       validateCreatePresetJson(resetText, {
-        provisionalPreset: createDraft.provisionalPreset,
+        provisionalPreset: createDraft.preset,
         authoritativeName: ""
       }),
       resetText
@@ -1175,11 +1153,11 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     if (!editDraft) {
       return;
     }
-    const resetText = resetEditPresetJson(editDraft.originalPreset, editDraft.currentName);
+    const resetText = resetEditPresetJson(editDraft.preset, editDraft.currentName);
     closeResetDialog(false);
     applyEditValidationResult(
       validateEditPresetJson(resetText, {
-        preset: editDraft.originalPreset,
+        preset: editDraft.preset,
         authoritativeName: editDraft.currentName
       }),
       resetText
