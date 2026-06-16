@@ -110,13 +110,41 @@ async function injectContentScript(
   dependencies: ContentMessagingDependencies
 ): Promise<void> {
   if (!dependencies.executeScript) {
-    return;
+    throw new Error("Content scripting API is not available.");
   }
 
   await dependencies.executeScript({
     target: frameId === undefined ? { tabId } : { tabId, frameIds: [frameId] },
     files: [dependencies.contentScriptFile]
   });
+}
+
+async function processContentResponse<Request extends ContentRequest>(
+  tabId: number,
+  frameId: number | undefined,
+  request: Request,
+  response: ContentResponseFor<Request>,
+  dependencies: ContentMessagingDependencies
+): Promise<ContentResponseFor<Request>> {
+  if (request.type === "READ_FILTERS" && response.ok && "filters" in response) {
+    const apiFilters = await readPowerBiSlicerStatesFromMainWorld(tabId, frameId, dependencies).catch(() => []);
+    return {
+      ok: true,
+      filters: mergeDomFiltersWithPowerBiApiState(response.filters, apiFilters)
+    } as ContentResponseFor<Request>;
+  }
+
+  return response;
+}
+
+async function sendAndProcessContentRequest<Request extends ContentRequest>(
+  tabId: number,
+  frameId: number | undefined,
+  request: Request,
+  dependencies: ContentMessagingDependencies
+): Promise<ContentResponseFor<Request>> {
+  const response = await sendMessageToFrame(tabId, frameId, request, dependencies);
+  return processContentResponse(tabId, frameId, request, response, dependencies);
 }
 
 function readPowerBiSlicerStatesInMainWorld(): PowerBiApiFilter[] | Promise<PowerBiApiFilter[]> {
@@ -242,25 +270,13 @@ export async function sendContentRequestToActiveTab<Request extends ContentReque
   const frameId = await dependencies.findBestFrameForFilters(tab.id);
 
   try {
-    const response = await sendMessageToFrame(tab.id, frameId, request, dependencies);
-    if (request.type === "READ_FILTERS" && response.ok && "filters" in response) {
-      const apiFilters = await readPowerBiSlicerStatesFromMainWorld(tab.id, frameId, dependencies).catch(() => []);
-      return { ok: true, filters: mergeDomFiltersWithPowerBiApiState(response.filters, apiFilters) };
-    }
-
-    return response;
+    return await sendAndProcessContentRequest(tab.id, frameId, request, dependencies);
   } catch (error) {
     if (!(error instanceof Error) || !isMissingReceiverError({ message: error.message })) {
       throw error;
     }
 
     await injectContentScript(tab.id, frameId, dependencies);
-    const response = await sendMessageToFrame(tab.id, frameId, request, dependencies);
-    if (request.type === "READ_FILTERS" && response.ok && "filters" in response) {
-      const apiFilters = await readPowerBiSlicerStatesFromMainWorld(tab.id, frameId, dependencies).catch(() => []);
-      return { ok: true, filters: mergeDomFiltersWithPowerBiApiState(response.filters, apiFilters) };
-    }
-
-    return response;
+    return sendAndProcessContentRequest(tab.id, frameId, request, dependencies);
   }
 }
