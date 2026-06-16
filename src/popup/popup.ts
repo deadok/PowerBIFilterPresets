@@ -3,28 +3,12 @@ import popupMarkup from "./popup.html?raw";
 import { getActiveTab, sendContentRequestToActiveTab } from "./contentMessaging";
 import { createCreateDialogController } from "./createDialogController";
 import { createDeleteDialogController } from "./deleteDialogController";
+import { createEditDialogController } from "./editDialogController";
 import { getPopupElements } from "./popupElements";
 import { createPopupDialogState } from "./popupDialogState";
-import {
-  applyPresetJsonValidation,
-  createPresetJsonDraft,
-  markPresetJsonNameChanged,
-  markPresetJsonTextChanged,
-  resetPresetJsonNameSync,
-  type EditPresetJsonDraft
-} from "./presetJsonDraft";
-import { normalizePresetName, validatePresetName } from "./presetNameValidation";
 import { createApplyResultLines, createResultLine, renderResult } from "./resultLog";
 import { createSaveReviewDialogController } from "./saveReviewDialogController";
-import {
-  createEditPresetDocument,
-  formatEditPresetJson,
-  resetEditPresetJson,
-  validateEditPresetJson,
-  type EditPresetJsonResult
-} from "../shared/presetJsonEditor";
 import { serializePresetExport } from "../shared/presetExport";
-import { createPresetRevision } from "../shared/presetRevision";
 import { createPresetStore, type PresetStore } from "../shared/presetStore";
 import type { PagePresetCollection, Preset, SendContentRequest } from "../shared/types";
 import { normalizePageUrl } from "../shared/url";
@@ -45,19 +29,10 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Popup action failed.";
 }
 
-function isPresetNameConflict(error: unknown): boolean {
-  return error instanceof Error && error.name === "PresetNameConflictError";
-}
-
 function runPopupAction(element: HTMLOutputElement, action: () => Promise<void>): void {
   void action().catch((error: unknown) => {
     renderResult(element, createResultLine(errorMessage(error), "error"));
   });
-}
-
-function setMessage(element: HTMLElement, message: string): void {
-  element.textContent = message;
-  element.hidden = message.length === 0;
 }
 
 export async function mountPopup(app: HTMLDivElement, dependencies: PopupDependencies): Promise<void> {
@@ -126,12 +101,7 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
   const tab = await dependencies.getActiveTab();
   const pageKey = normalizePageUrl(tab.url);
   let currentPresets: Preset[] = [];
-  let editDraft: EditPresetJsonDraft | undefined;
   let captureInFlight = false;
-  let editInFlight = false;
-  let editValidationTimer: number | undefined;
-  let editValidationToken = 0;
-  let editResetRestoreFocusTarget: HTMLElement | undefined;
   const dialogState = createPopupDialogState<ActiveDialog>({
     background: popupContent,
     backdrop: modalBackdrop,
@@ -301,6 +271,36 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     errorMessage
   });
 
+  const editDialogController = createEditDialogController({
+    elements: {
+      triggerButton: renameButton,
+      dialog: editDialog,
+      nameInput: editNameInput,
+      nameError: editNameError,
+      jsonInput: editJsonInput,
+      validation: editValidation,
+      saveError: editSaveError,
+      formatJsonButton: formatEditJsonButton,
+      resetJsonButton: resetEditJsonButton,
+      cancelButton: cancelEditButton,
+      confirmButton: confirmEditButton,
+      resetDialog: editResetDialog,
+      cancelResetButton: cancelEditResetButton,
+      confirmResetButton: confirmEditResetButton
+    },
+    now: dependencies.now,
+    getCurrentCollection: () => ({ schemaVersion: 1, pageKey, presets: currentPresets }),
+    savePreset: (preset, options) => dependencies.store.savePreset(pageKey, preset, options),
+    isDialogActive: (dialog) => dialogState.active === dialog,
+    openDialog: (dialog) => openDialog(dialog),
+    closeDialog: (dialog) => closeDialog(dialog),
+    renderCollection,
+    renderUpdated: () => {
+      renderResult(result, createResultLine("Preset updated.", "normal"));
+    },
+    errorMessage
+  });
+
   function setCaptureBusy(busy: boolean): void {
     captureInFlight = busy;
     saveButton.disabled = busy;
@@ -313,157 +313,6 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     } else {
       updateSelectedActionStates();
     }
-  }
-
-  function renderEditValidationMessage(message: string, invalid: boolean): void {
-    editValidation.textContent = message;
-    editValidation.classList.toggle("is-invalid", invalid);
-  }
-
-  function setEditControlsDisabled(disabled: boolean): void {
-    editNameInput.disabled = disabled;
-    editJsonInput.disabled = disabled;
-    formatEditJsonButton.disabled = disabled;
-    resetEditJsonButton.disabled = disabled;
-    cancelEditButton.disabled = disabled;
-    confirmEditButton.disabled = disabled;
-  }
-
-  function clearEditValidationTimer(): void {
-    if (editValidationTimer !== undefined) {
-      window.clearTimeout(editValidationTimer);
-      editValidationTimer = undefined;
-    }
-  }
-
-  function applyEditValidationResult(validation: EditPresetJsonResult, nextText?: string): void {
-    if (!editDraft) {
-      return;
-    }
-
-    editDraft = applyPresetJsonValidation(editDraft, validation, nextText);
-    if (nextText !== undefined) {
-      editJsonInput.value = nextText;
-    } else {
-      editDraft = markPresetJsonTextChanged(editDraft, editJsonInput.value);
-    }
-
-    if (validation.valid) {
-      renderEditValidationMessage("JSON is valid.", false);
-      setMessage(editSaveError, "");
-    } else {
-      renderEditValidationMessage(validation.error.message, true);
-    }
-
-    formatEditJsonButton.disabled = editInFlight || !validation.valid;
-    resetEditJsonButton.disabled = editInFlight;
-    confirmEditButton.disabled = editInFlight;
-  }
-
-  function validateEditDraftNow(allowPendingNameSync: boolean): EditPresetJsonResult | undefined {
-    if (!editDraft) {
-      return undefined;
-    }
-
-    const validation = validateEditPresetJson(editJsonInput.value, {
-      preset: editDraft.preset,
-      authoritativeName: editDraft.currentName,
-      allowNameMismatch: allowPendingNameSync
-    });
-
-    if (validation.valid) {
-      editDraft = resetPresetJsonNameSync(editDraft);
-      applyEditValidationResult(validation, validation.synchronizedText);
-    } else {
-      applyEditValidationResult(validation);
-    }
-
-    return validation;
-  }
-
-  function scheduleEditValidation(): void {
-    if (!editDraft) {
-      return;
-    }
-
-    clearEditValidationTimer();
-    const token = ++editValidationToken;
-    editValidationTimer = window.setTimeout(() => {
-      if (!editDraft || dialogState.active !== "edit" || token !== editValidationToken) {
-        return;
-      }
-      validateEditDraftNow(editDraft.nameSyncPending);
-    }, 250);
-  }
-
-  function closeEditDialog(restoreFocus: boolean): void {
-    clearEditValidationTimer();
-    editValidationToken += 1;
-    closeDialog("edit");
-    editDraft = undefined;
-    editInFlight = false;
-    editNameInput.value = "";
-    editJsonInput.value = "";
-    setEditControlsDisabled(false);
-    setMessage(editNameError, "");
-    setMessage(editSaveError, "");
-    renderEditValidationMessage("", false);
-    if (restoreFocus) {
-      renameButton.focus();
-    }
-  }
-
-  function openEditDialog(preset: Preset): void {
-    const jsonText = createEditPresetDocument(preset);
-    editDraft = createPresetJsonDraft({
-      kind: "edit",
-      preset,
-      originalRevision: createPresetRevision(preset),
-      currentName: preset.name.trim(),
-      jsonText,
-      validation: validateEditPresetJson(jsonText, {
-        preset,
-        authoritativeName: preset.name.trim()
-      })
-    });
-
-    editNameInput.value = editDraft.currentName;
-    editJsonInput.value = jsonText;
-    setMessage(editNameError, "");
-    setMessage(editSaveError, "");
-    setEditControlsDisabled(false);
-    applyEditValidationResult(editDraft.validation, jsonText);
-    if (!openDialog("edit")) {
-      editDraft = undefined;
-      return;
-    }
-    editNameInput.focus();
-    editNameInput.select();
-  }
-
-  function openResetDialog(): void {
-    if (!editDraft || editInFlight) {
-      return;
-    }
-
-    editResetRestoreFocusTarget = resetEditJsonButton;
-    closeDialog("edit");
-    if (!openDialog("editReset")) {
-      openDialog("edit");
-      return;
-    }
-    cancelEditResetButton.focus();
-  }
-
-  function closeResetDialog(restoreFocus: boolean): void {
-    closeDialog("editReset");
-    if (editDraft) {
-      openDialog("edit");
-    }
-    if (restoreFocus) {
-      (editResetRestoreFocusTarget ?? resetEditJsonButton).focus();
-    }
-    editResetRestoreFocusTarget = undefined;
   }
 
   saveButton.addEventListener("click", () => {
@@ -540,39 +389,8 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
         return;
       }
 
-      openEditDialog(preset);
+      editDialogController.open(preset);
     });
-  });
-
-  editNameInput.addEventListener("input", () => {
-    if (!editDraft || editInFlight) {
-      return;
-    }
-
-    const nextEditName = editNameInput.value;
-    setMessage(editNameError, "");
-    setMessage(editSaveError, "");
-
-    if (editDraft.validation.valid) {
-      const synchronizedText = resetEditPresetJson(
-        {
-          ...editDraft.preset,
-          filters: editDraft.validation.filters
-        },
-        nextEditName
-      );
-      editDraft = markPresetJsonNameChanged(editDraft, {
-        name: nextEditName,
-        synchronizedText
-      });
-      applyEditValidationResult(
-        editDraft.validation,
-        synchronizedText
-      );
-      return;
-    }
-
-    editDraft = markPresetJsonNameChanged(editDraft, { name: nextEditName });
   });
 
   saveNameInput.addEventListener("keydown", (event) => {
@@ -580,157 +398,6 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
       event.preventDefault();
       saveReviewDialogController.confirm();
     }
-  });
-
-  editNameInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && !editInFlight) {
-      event.preventDefault();
-      confirmEditButton.click();
-    }
-  });
-
-  editJsonInput.addEventListener("input", () => {
-    if (!editDraft || editInFlight) {
-      return;
-    }
-
-    editDraft = markPresetJsonTextChanged(editDraft, editJsonInput.value);
-    setMessage(editSaveError, "");
-    scheduleEditValidation();
-  });
-
-  formatEditJsonButton.addEventListener("click", () => {
-    if (!editDraft || editInFlight || !editDraft.validation.valid) {
-      return;
-    }
-
-    const formattedText = formatEditPresetJson(editJsonInput.value, {
-      preset: editDraft.preset,
-      authoritativeName: editDraft.currentName
-    });
-    applyEditValidationResult(editDraft.validation, formattedText);
-  });
-
-  resetEditJsonButton.addEventListener("click", () => {
-    if (!editDraft || editInFlight) {
-      return;
-    }
-
-    if (editJsonInput.value === resetEditPresetJson(editDraft.preset, editDraft.currentName)) {
-      const resetText = resetEditPresetJson(editDraft.preset, editDraft.currentName);
-      applyEditValidationResult(
-        validateEditPresetJson(resetText, {
-          preset: editDraft.preset,
-          authoritativeName: editDraft.currentName
-        }),
-        resetText
-      );
-      editJsonInput.focus();
-      return;
-    }
-
-    openResetDialog();
-  });
-
-  cancelEditButton.addEventListener("click", () => {
-    if (!editInFlight) {
-      closeEditDialog(true);
-    }
-  });
-
-  confirmEditButton.addEventListener("click", () => {
-    if (!editDraft || editInFlight) {
-      return;
-    }
-
-    clearEditValidationTimer();
-    const currentDraft = editDraft;
-    const collectionValidation = validatePresetName(editNameInput.value, { schemaVersion: 1, pageKey, presets: currentPresets }, currentDraft.preset.id);
-    if (!collectionValidation.valid) {
-      setMessage(editNameError, collectionValidation.error);
-      editNameInput.focus();
-      return;
-    }
-
-    editDraft = markPresetJsonNameChanged(currentDraft, {
-      name: collectionValidation.name,
-      nameSyncPending: currentDraft.nameSyncPending || currentDraft.currentName !== collectionValidation.name
-    });
-    const jsonValidation = validateEditPresetJson(editJsonInput.value, {
-      preset: currentDraft.preset,
-      authoritativeName: collectionValidation.name,
-      allowNameMismatch: editDraft.nameSyncPending
-    });
-    if (!jsonValidation.valid) {
-      applyEditValidationResult(jsonValidation);
-      editJsonInput.focus();
-      return;
-    }
-
-    applyEditValidationResult(jsonValidation, jsonValidation.synchronizedText);
-    editInFlight = true;
-    setEditControlsDisabled(true);
-    editDialog.setAttribute("aria-busy", "true");
-    setMessage(editNameError, "");
-    setMessage(editSaveError, "");
-
-    void dependencies.store
-      .savePreset(
-        pageKey,
-        {
-          ...jsonValidation.normalizedPreset,
-          name: collectionValidation.name,
-          updatedAt: dependencies.now().toISOString()
-        },
-        {
-          requireExisting: true,
-          expectedRevision: currentDraft.originalRevision,
-          uniqueNormalizedName: normalizePresetName(collectionValidation.name)
-        }
-      )
-      .then((nextCollection) => {
-        renderCollection(nextCollection, currentDraft.preset.id);
-        closeEditDialog(false);
-        editDialog.removeAttribute("aria-busy");
-        renderResult(result, createResultLine("Preset updated.", "normal"));
-        renameButton.focus();
-      })
-      .catch((error: unknown) => {
-        if (isPresetNameConflict(error)) {
-          setMessage(editNameError, errorMessage(error));
-          editNameInput.focus();
-        } else {
-          setMessage(editSaveError, errorMessage(error));
-        }
-      })
-      .finally(() => {
-        if (dialogState.active === "edit") {
-          editInFlight = false;
-          setEditControlsDisabled(false);
-          editDialog.removeAttribute("aria-busy");
-          formatEditJsonButton.disabled = !editDraft?.validation.valid;
-        }
-      });
-  });
-
-  cancelEditResetButton.addEventListener("click", () => {
-    closeResetDialog(true);
-  });
-
-  confirmEditResetButton.addEventListener("click", () => {
-    if (!editDraft) {
-      return;
-    }
-    const resetText = resetEditPresetJson(editDraft.preset, editDraft.currentName);
-    closeResetDialog(false);
-    applyEditValidationResult(
-      validateEditPresetJson(resetText, {
-        preset: editDraft.preset,
-        authoritativeName: editDraft.currentName
-      }),
-      resetText
-    );
-    editJsonInput.focus();
   });
 
   deleteButton.addEventListener("click", deleteDialogController.open);
@@ -759,7 +426,7 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
       const operationInFlight =
         saveReviewDialogController.isInFlight() ||
         createDialogController.isInFlight() ||
-        editInFlight ||
+        editDialogController.isInFlight() ||
         deleteDialogController.isInFlight();
       event.preventDefault();
       if (operationInFlight) {
@@ -772,9 +439,9 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
       } else if (dialogState.active === "createReset") {
         createDialogController.closeReset(true);
       } else if (dialogState.active === "edit") {
-        closeEditDialog(true);
+        editDialogController.close(true);
       } else if (dialogState.active === "editReset") {
-        closeResetDialog(true);
+        editDialogController.closeReset(true);
       } else {
         deleteDialogController.close(true);
       }
