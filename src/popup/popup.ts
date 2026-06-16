@@ -1,6 +1,7 @@
 import "./popup.css";
 import popupMarkup from "./popup.html?raw";
 import { getActiveTab, sendContentRequestToActiveTab } from "./contentMessaging";
+import { getPopupElements } from "./popupElements";
 import { createPopupDialogState } from "./popupDialogState";
 import { normalizePresetName, validatePresetName } from "./presetNameValidation";
 import { createApplyResultLines, createResultLine, renderResult } from "./resultLog";
@@ -71,8 +72,6 @@ type CreateDraft = {
 
 type ActiveDialog = "save" | "create" | "createReset" | "edit" | "editReset" | "delete";
 
-const selectedActionIds = ["apply-preset", "export-preset", "rename-preset", "delete-preset"] as const;
-
 function createPreset(filters: FilterPresetItem[], name: string, dependencies: PopupDependencies): Preset {
   const now = dependencies.now().toISOString();
   return {
@@ -109,14 +108,6 @@ function runPopupAction(element: HTMLOutputElement, action: () => Promise<void>)
   });
 }
 
-function requiredElement<T extends Element>(root: ParentNode, selector: string): T {
-  const element = root.querySelector<T>(selector);
-  if (!element) {
-    throw new Error(`Popup markup is missing ${selector}.`);
-  }
-  return element;
-}
-
 function setMessage(element: HTMLElement, message: string): void {
   element.textContent = message;
   element.hidden = message.length === 0;
@@ -125,62 +116,65 @@ function setMessage(element: HTMLElement, message: string): void {
 export async function mountPopup(app: HTMLDivElement, dependencies: PopupDependencies): Promise<void> {
   app.innerHTML = popupMarkup;
 
-  const popupContent = requiredElement<HTMLDivElement>(app, ".popup-content");
-  const pageStatus = requiredElement<HTMLParagraphElement>(app, "#page-status");
-  const saveButton = requiredElement<HTMLButtonElement>(app, "#save-current");
-  const createButton = requiredElement<HTMLButtonElement>(app, "#create-preset");
-  const applyButton = requiredElement<HTMLButtonElement>(app, "#apply-preset");
-  const exportButton = requiredElement<HTMLButtonElement>(app, "#export-preset");
-  const renameButton = requiredElement<HTMLButtonElement>(app, "#rename-preset");
-  const deleteButton = requiredElement<HTMLButtonElement>(app, "#delete-preset");
-  const presetSelect = requiredElement<HTMLSelectElement>(app, "#preset-select");
-  const result = requiredElement<HTMLOutputElement>(app, "#result");
-  const modalBackdrop = requiredElement<HTMLDivElement>(app, ".modal-backdrop");
-  const saveDialog = requiredElement<HTMLElement>(app, "#save-review-dialog");
-  const saveNameInput = requiredElement<HTMLInputElement>(app, "#save-name");
-  const saveNameError = requiredElement<HTMLParagraphElement>(app, "#save-name-error");
-  const saveStorageError = requiredElement<HTMLParagraphElement>(app, "#save-storage-error");
-  const reviewList = requiredElement<HTMLDivElement>(app, "#review-filter-list");
-  const reviewEmpty = requiredElement<HTMLParagraphElement>(app, "#review-empty");
-  const reviewSelectionCount = requiredElement<HTMLParagraphElement>(app, "#review-selection-count");
-  const reviewSelectionGuidance = requiredElement<HTMLParagraphElement>(app, "#review-selection-guidance");
-  const selectAllButton = requiredElement<HTMLButtonElement>(app, "#select-all-filters");
-  const clearAllButton = requiredElement<HTMLButtonElement>(app, "#clear-all-filters");
-  const cancelSaveButton = requiredElement<HTMLButtonElement>(app, "#cancel-save");
-  const confirmSaveButton = requiredElement<HTMLButtonElement>(app, "#confirm-save");
-  const createDialog = requiredElement<HTMLElement>(app, "#create-preset-dialog");
-  const createNameInput = requiredElement<HTMLInputElement>(app, "#create-preset-name");
-  const createNameError = requiredElement<HTMLParagraphElement>(app, "#create-preset-name-error");
-  const createJsonInput = requiredElement<HTMLTextAreaElement>(app, "#create-preset-json");
-  const createValidation = requiredElement<HTMLParagraphElement>(app, "#create-preset-validation");
-  const createSaveError = requiredElement<HTMLParagraphElement>(app, "#create-preset-save-error");
-  const pasteCreateJsonButton = requiredElement<HTMLButtonElement>(app, "#paste-create-preset-json");
-  const formatCreateJsonButton = requiredElement<HTMLButtonElement>(app, "#format-create-preset-json");
-  const resetCreateJsonButton = requiredElement<HTMLButtonElement>(app, "#reset-create-preset-json");
-  const cancelCreateButton = requiredElement<HTMLButtonElement>(app, "#cancel-create-preset");
-  const confirmCreateButton = requiredElement<HTMLButtonElement>(app, "#confirm-create-preset");
-  const editDialog = requiredElement<HTMLElement>(app, "#edit-preset-dialog");
-  const editNameInput = requiredElement<HTMLInputElement>(app, "#edit-preset-name");
-  const editNameError = requiredElement<HTMLParagraphElement>(app, "#edit-preset-name-error");
-  const editJsonInput = requiredElement<HTMLTextAreaElement>(app, "#edit-preset-json");
-  const editValidation = requiredElement<HTMLParagraphElement>(app, "#edit-preset-validation");
-  const editSaveError = requiredElement<HTMLParagraphElement>(app, "#edit-preset-save-error");
-  const formatEditJsonButton = requiredElement<HTMLButtonElement>(app, "#format-edit-preset-json");
-  const resetEditJsonButton = requiredElement<HTMLButtonElement>(app, "#reset-edit-preset-json");
-  const cancelEditButton = requiredElement<HTMLButtonElement>(app, "#cancel-edit-preset");
-  const confirmEditButton = requiredElement<HTMLButtonElement>(app, "#confirm-edit-preset");
-  const createResetDialog = requiredElement<HTMLElement>(app, "#reset-create-preset-dialog");
-  const cancelCreateResetButton = requiredElement<HTMLButtonElement>(app, "#cancel-reset-create-preset");
-  const confirmCreateResetButton = requiredElement<HTMLButtonElement>(app, "#confirm-reset-create-preset");
-  const editResetDialog = requiredElement<HTMLElement>(app, "#reset-edit-preset-dialog");
-  const cancelEditResetButton = requiredElement<HTMLButtonElement>(app, "#cancel-reset-edit-preset");
-  const confirmEditResetButton = requiredElement<HTMLButtonElement>(app, "#confirm-reset-edit-preset");
-  const deleteDialog = requiredElement<HTMLElement>(app, ".delete-dialog");
-  const deletePresetName = requiredElement<HTMLElement>(app, "#delete-preset-name");
-  const deleteError = requiredElement<HTMLParagraphElement>(app, "#delete-error");
-  const cancelDeleteButton = requiredElement<HTMLButtonElement>(app, "#cancel-delete");
-  const confirmDeleteButton = requiredElement<HTMLButtonElement>(app, "#confirm-delete");
-  const iconButtons = Array.from(app.querySelectorAll<HTMLButtonElement>(".icon-button"));
+  const {
+    popupContent,
+    pageStatus,
+    saveButton,
+    createButton,
+    applyButton,
+    exportButton,
+    renameButton,
+    deleteButton,
+    selectedActionButtons,
+    presetSelect,
+    result,
+    modalBackdrop,
+    saveDialog,
+    saveNameInput,
+    saveNameError,
+    saveStorageError,
+    reviewList,
+    reviewEmpty,
+    reviewSelectionCount,
+    reviewSelectionGuidance,
+    selectAllButton,
+    clearAllButton,
+    cancelSaveButton,
+    confirmSaveButton,
+    createDialog,
+    createNameInput,
+    createNameError,
+    createJsonInput,
+    createValidation,
+    createSaveError,
+    pasteCreateJsonButton,
+    formatCreateJsonButton,
+    resetCreateJsonButton,
+    cancelCreateButton,
+    confirmCreateButton,
+    editDialog,
+    editNameInput,
+    editNameError,
+    editJsonInput,
+    editValidation,
+    editSaveError,
+    formatEditJsonButton,
+    resetEditJsonButton,
+    cancelEditButton,
+    confirmEditButton,
+    createResetDialog,
+    cancelCreateResetButton,
+    confirmCreateResetButton,
+    editResetDialog,
+    cancelEditResetButton,
+    confirmEditResetButton,
+    deleteDialog,
+    deletePresetName,
+    deleteError,
+    cancelDeleteButton,
+    confirmDeleteButton,
+    iconButtons
+  } = getPopupElements(app);
 
   const tab = await dependencies.getActiveTab();
   const pageKey = normalizePageUrl(tab.url);
@@ -226,8 +220,8 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
 
   function updateSelectedActionStates(): void {
     const hasSelection = Boolean(selectedPreset());
-    for (const id of selectedActionIds) {
-      requiredElement<HTMLButtonElement>(app, `#${id}`).disabled = !hasSelection;
+    for (const button of Object.values(selectedActionButtons)) {
+      button.disabled = !hasSelection;
     }
   }
 
@@ -313,8 +307,8 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     createButton.disabled = busy;
     presetSelect.disabled = busy || currentPresets.length === 0;
     if (busy) {
-      for (const id of selectedActionIds) {
-        requiredElement<HTMLButtonElement>(app, `#${id}`).disabled = true;
+      for (const button of Object.values(selectedActionButtons)) {
+        button.disabled = true;
       }
     } else {
       updateSelectedActionStates();
