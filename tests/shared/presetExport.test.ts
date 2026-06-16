@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { parsePresetExport, serializePresetExport } from "../../src/shared/presetExport";
+import { serializePresetExport } from "../../src/shared/presetExport";
+import { parsePresetExport } from "../../src/shared/presetExportDecode";
 import type { Preset } from "../../src/shared/types";
 
 const samplePreset: Preset = {
