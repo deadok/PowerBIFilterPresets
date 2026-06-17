@@ -1,5 +1,13 @@
 import type { FilterOperationResult, FilterPresetItem } from "../shared/types";
 import {
+  ambiguousFilterApplyResult,
+  appliedFilterResult,
+  missingFilterApplyResult,
+  missingValuesApplyResult,
+  resolveSlicerApplyResult,
+  type SlicerApplyResult
+} from "./powerBiApplyResults";
+import {
   externalSlicerOptions,
   hasAllComboboxSummary,
   hasGenericMultiSelectSummary,
@@ -30,13 +38,6 @@ type SelectionTransition = {
   beforeSelected: boolean;
   clickAttempted: boolean;
   afterSelected: boolean;
-};
-
-type SlicerSelectionResult = {
-  availableLabels: string[];
-  failedLabels: string[];
-  missingLabels: string[];
-  scanCompleted: boolean;
 };
 
 const DROPDOWN_OPTIONS_TIMEOUT_MS = 1500;
@@ -196,7 +197,7 @@ async function applySlicerOptionsSelection(
     onResolvedExternalOptions?: (optionCount: number) => void;
     onWaitingForExternalOptions?: (timeoutMs: number, intervalMs: number) => void;
   } = {}
-): Promise<SlicerSelectionResult> {
+): Promise<SlicerApplyResult> {
   const desiredLabels = new Set(selectedLabels);
   const availableLabels: string[] = [];
   const failedLabels: string[] = [];
@@ -388,7 +389,7 @@ export function createPowerBiDomAdapter(root: ParentNode = document): PowerBiDom
 
       if (controls.length === 0) {
         console.warn(LOG_PREFIX, "Filter was not found while applying preset", { title, desiredLabels: selectedLabels });
-        return { title, status: "missing_filter", message: "Filter was not found." };
+        return missingFilterApplyResult(title);
       }
 
       if (controls.length > 1) {
@@ -397,7 +398,7 @@ export function createPowerBiDomAdapter(root: ParentNode = document): PowerBiDom
           desiredLabels: selectedLabels,
           matchCount: controls.length
         });
-        return { title, status: "ambiguous_filter", message: "More than one filter matched this title." };
+        return ambiguousFilterApplyResult(title);
       }
 
       const control = controls[0];
@@ -412,11 +413,7 @@ export function createPowerBiDomAdapter(root: ParentNode = document): PowerBiDom
               desiredLabels: selectedLabels,
               availableLabels: []
             });
-            return {
-              title,
-              status: "applied",
-              message: "Applied 0 values."
-            };
+            return appliedFilterResult(title, 0);
           }
 
           const result = await applySlicerOptionsSelection(root, control, title, selectedLabels, {
@@ -436,44 +433,12 @@ export function createPowerBiDomAdapter(root: ParentNode = document): PowerBiDom
             }
           });
 
-          if (!result.scanCompleted) {
-            console.warn(LOG_PREFIX, "Timed out while scanning dropdown values", {
-              title,
-              desiredLabels: selectedLabels,
-              availableLabels: result.availableLabels
-            });
-            return { title, status: "timeout", message: "Timed out while scanning dropdown values." };
-          }
-
-          if (result.failedLabels.length > 0) {
-            console.warn(LOG_PREFIX, "Filter values failed while applying preset", {
-              title,
-              desiredLabels: selectedLabels,
-              failedLabels: result.failedLabels,
-              availableLabels: result.availableLabels
-            });
-            return {
-              title,
-              status: "interaction_failed",
-              message: `Could not update values: ${result.failedLabels.join(", ")}.`
-            };
-          }
-
-          if (result.missingLabels.length > 0) {
-            console.warn(LOG_PREFIX, "Missing filter values while applying preset", {
-              title,
-              desiredLabels: selectedLabels,
-              missingLabels: result.missingLabels,
-              availableLabels: result.availableLabels
-            });
-            return { title, status: "missing_value", message: `Missing values: ${result.missingLabels.join(", ")}.` };
-          }
-
-          return {
+          return resolveSlicerApplyResult({
+            ...result,
+            logPrefix: LOG_PREFIX,
             title,
-            status: "applied",
-            message: `Applied ${selectedLabels.length} ${selectedLabels.length === 1 ? "value" : "values"}.`
-          };
+            desiredLabels: selectedLabels
+          });
         }
 
         const entries = Array.from(control.element.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')).map(
@@ -497,7 +462,7 @@ export function createPowerBiDomAdapter(root: ParentNode = document): PowerBiDom
             missingLabels: missing,
             availableLabels
           });
-          return { title, status: "missing_value", message: `Missing values: ${missing.join(", ")}.` };
+          return missingValuesApplyResult(title, missing);
         }
 
         for (const [label, element] of byLabel) {
@@ -518,11 +483,7 @@ export function createPowerBiDomAdapter(root: ParentNode = document): PowerBiDom
           }
         }
 
-        return {
-          title,
-          status: "applied",
-          message: `Applied ${selectedLabels.length} ${selectedLabels.length === 1 ? "value" : "values"}.`
-        };
+        return appliedFilterResult(title, selectedLabels.length);
       } finally {
         if (openedCombobox) {
           await closeSlicerDropdown(openedCombobox, { title });
