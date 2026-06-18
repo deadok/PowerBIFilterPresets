@@ -9,8 +9,6 @@ import type {
 
 const operationStatuses = new Set<OperationStatus>([
   "applied",
-  "saved",
-  "skipped_unsupported",
   "missing_filter",
   "ambiguous_filter",
   "missing_value",

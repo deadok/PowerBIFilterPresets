@@ -1,7 +1,5 @@
 export type FilterFrameProbe = {
   frameId: number;
-  href: string;
-  title: string;
   supportedFilterCount: number;
 };
 
@@ -18,8 +16,6 @@ export function probeFrameForSupportedFilters(): FrameProbePayload {
   ].join(",");
 
   return {
-    href: location.href,
-    title: document.title,
     supportedFilterCount: document.querySelectorAll(selector).length
   };
 }
@@ -57,8 +53,6 @@ export async function findBestFrameForFilters(tabId: number): Promise<number | u
       return [
         {
           frameId: result.frameId,
-          href: result.result.href,
-          title: result.result.title,
           supportedFilterCount: result.result.supportedFilterCount
         }
       ];

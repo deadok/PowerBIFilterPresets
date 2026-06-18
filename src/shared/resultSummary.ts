@@ -13,12 +13,11 @@ export function summarizeResults(results: FilterOperationResult[]): string {
     return "No supported list filters found.";
   }
 
-  const successful = results.filter((result) => result.status === "applied" || result.status === "saved").length;
+  const successful = results.filter((result) => result.status === "applied").length;
   const attention = results.length - successful;
 
   if (attention === 0) {
-    const verb = results[0]?.status === "saved" ? "Saved" : "Applied";
-    return `${verb} ${plural(successful, "filter", "filters")}.`;
+    return `Applied ${plural(successful, "filter", "filters")}.`;
   }
 
   return `Applied ${plural(successful, "filter", "filters")}. ${needsAttention(attention)}`;
