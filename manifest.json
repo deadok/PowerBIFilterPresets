@@ -9,7 +9,7 @@
     "48": "assets/brand/icon-48.png",
     "128": "assets/brand/icon-128.png"
   },
-  "permissions": ["storage", "activeTab", "scripting"],
+  "permissions": ["storage", "activeTab", "scripting", "clipboardRead"],
   "action": {
     "default_title": "Power BI Presets",
     "default_popup": "index.html",
