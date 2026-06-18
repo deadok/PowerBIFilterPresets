@@ -401,6 +401,35 @@ describe("popup", () => {
     expect(jsonInput.value).toBe(originalJson);
   });
 
+  it("shows the clipboard-unavailable error without replacing the draft", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: vi.fn().mockResolvedValue(undefined)
+      }
+    });
+
+    await mountPopup([]);
+    click(newButton());
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>("#create-preset-dialog")?.hidden).toBe(false);
+    });
+
+    const jsonInput = document.querySelector<HTMLTextAreaElement>("#create-preset-json");
+    if (!jsonInput) {
+      throw new Error("Create JSON input not found.");
+    }
+    const originalJson = jsonInput.value;
+
+    click(document.querySelector("#paste-create-preset-json") as Element);
+    await vi.waitFor(() => {
+      expect(document.querySelector("#create-preset-validation")?.textContent).toBe(
+        "Clipboard access is unavailable."
+      );
+    });
+    expect(jsonInput.value).toBe(originalJson);
+  });
+
   it("loads parseable semantic-invalid pasted JSON for correction", async () => {
     await mountPopup([]);
     vi.mocked(navigator.clipboard.readText).mockResolvedValueOnce(

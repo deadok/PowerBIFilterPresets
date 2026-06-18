@@ -462,7 +462,7 @@ if (app) {
     sendContentRequest: sendContentRequestToActiveTab,
     readClipboardText: () => {
       if (!navigator.clipboard?.readText) {
-        throw new Error("Clipboard access is unavailable.");
+        return Promise.reject(new Error("Clipboard access is unavailable."));
       }
       return navigator.clipboard.readText();
     },
