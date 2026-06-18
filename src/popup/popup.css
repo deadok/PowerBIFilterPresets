@@ -86,6 +86,7 @@ header {
 
 .popup-heading {
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 h1,
@@ -246,6 +247,45 @@ select:disabled {
   min-width: 40px;
 }
 
+.help-button-glyph {
+  display: inline-block;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.header-help-trigger {
+  width: auto;
+  min-width: 0;
+  min-height: 0;
+  margin-left: auto;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  font-weight: 400;
+}
+
+.header-help-trigger:hover {
+  background: transparent;
+  border-color: transparent;
+}
+
+.header-help-trigger:focus-visible {
+  outline: 3px solid #f59e0b;
+  outline-offset: 3px;
+}
+
+.header-help-trigger:disabled .help-button-glyph {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.header-help-trigger .help-button-glyph {
+  line-height: 1;
+}
+
 .icon-button:not(:disabled):hover {
   color: #1d4ed8;
   background: #eff6ff;
@@ -372,10 +412,83 @@ select:disabled {
 }
 
 .save-review-dialog[hidden],
+.help-dialog[hidden],
 .edit-preset-dialog[hidden],
 .reset-edit-preset-dialog[hidden],
 .delete-dialog[hidden] {
   display: none;
+}
+
+.help-dialog {
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  max-height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 14px;
+  padding: 16px;
+  overflow: hidden;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.help-dialog-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dialog-close-button {
+  flex: 0 0 auto;
+  width: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 8px;
+  color: #334155;
+  background: #fff;
+  border: 1px solid #94a3b8;
+  border-radius: 7px;
+}
+
+.dialog-close-button:not(:disabled):hover {
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-color: #64748b;
+}
+
+.dialog-close-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.help-content {
+  display: grid;
+  gap: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.help-content h3 {
+  margin: 0;
+  color: #1f2937;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.help-content p {
+  margin: 4px 0 12px;
+}
+
+.help-content p:last-child {
+  margin-bottom: 0;
 }
 
 .dialog-header p {

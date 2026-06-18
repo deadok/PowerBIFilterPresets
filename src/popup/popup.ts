@@ -23,7 +23,7 @@ type PopupDependencies = {
   randomUUID: () => string;
 };
 
-type ActiveDialog = "save" | "create" | "createReset" | "edit" | "editReset" | "delete";
+type ActiveDialog = "help" | "save" | "create" | "createReset" | "edit" | "editReset" | "delete";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Popup action failed.";
@@ -42,6 +42,7 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     popupContent,
     pageStatus,
     saveButton,
+    helpButton,
     createButton,
     applyButton,
     exportButton,
@@ -51,6 +52,8 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     presetSelect,
     result,
     modalBackdrop,
+    helpDialog,
+    closeHelpButton,
     saveDialog,
     saveNameInput,
     saveNameError,
@@ -106,6 +109,7 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     background: popupContent,
     backdrop: modalBackdrop,
     dialogs: {
+      help: helpDialog,
       save: saveDialog,
       create: createDialog,
       createReset: createResetDialog,
@@ -161,7 +165,14 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     if (!dialogState.open(kind)) {
       return false;
     }
-    if (kind === "save" || kind === "create" || kind === "createReset" || kind === "edit" || kind === "editReset") {
+    if (
+      kind === "help" ||
+      kind === "save" ||
+      kind === "create" ||
+      kind === "createReset" ||
+      kind === "edit" ||
+      kind === "editReset"
+    ) {
       document.body.classList.add("review-open");
       modalBackdrop.classList.add("review-backdrop");
     }
@@ -172,9 +183,34 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     if (!dialogState.close(kind)) {
       return;
     }
-    if (kind === "save" || kind === "create" || kind === "createReset" || kind === "edit" || kind === "editReset") {
+    if (
+      kind === "help" ||
+      kind === "save" ||
+      kind === "create" ||
+      kind === "createReset" ||
+      kind === "edit" ||
+      kind === "editReset"
+    ) {
       document.body.classList.remove("review-open");
       modalBackdrop.classList.remove("review-backdrop");
+    }
+  }
+
+  function openHelp(): void {
+    if (captureInFlight || dialogState.active || !openDialog("help")) {
+      return;
+    }
+    closeHelpButton.focus();
+  }
+
+  function closeHelp(restoreFocus: boolean): void {
+    const wasActive = dialogState.active === "help";
+    closeDialog("help");
+    if (!wasActive) {
+      return;
+    }
+    if (restoreFocus) {
+      helpButton.focus();
     }
   }
 
@@ -374,6 +410,10 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     });
   });
 
+  helpButton.addEventListener("click", openHelp);
+  closeHelpButton.addEventListener("click", () => {
+    closeHelp(true);
+  });
   createButton.addEventListener("click", createDialogController.open);
 
   renameButton.addEventListener("click", () => {
@@ -434,6 +474,8 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
       }
       if (dialogState.active === "save") {
         saveReviewDialogController.close(true);
+      } else if (dialogState.active === "help") {
+        closeHelp(true);
       } else if (dialogState.active === "create") {
         createDialogController.close(true);
       } else if (dialogState.active === "createReset") {

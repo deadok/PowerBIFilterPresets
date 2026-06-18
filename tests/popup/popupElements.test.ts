@@ -15,6 +15,7 @@ describe("getPopupElements", () => {
     expect(elements.popupContent).toBeInstanceOf(HTMLDivElement);
     expect(elements.pageStatus).toBeInstanceOf(HTMLParagraphElement);
     expect(elements.saveButton).toBeInstanceOf(HTMLButtonElement);
+    expect(elements.helpButton).toBeInstanceOf(HTMLButtonElement);
     expect(elements.presetSelect).toBeInstanceOf(HTMLSelectElement);
     expect(elements.result).toBeInstanceOf(HTMLOutputElement);
     expect(elements.createJsonInput).toBeInstanceOf(HTMLTextAreaElement);

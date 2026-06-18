@@ -6,6 +6,9 @@
         <h1>Power BI Presets</h1>
         <p id="page-status">Loading current page...</p>
       </div>
+      <button id="show-help" class="header-help-trigger" type="button" aria-label="Show help" title="Show help">
+        <span class="help-button-glyph" aria-hidden="true">ℹ️</span>
+      </button>
     </header>
 
     <div class="create-preset-actions">
@@ -91,6 +94,46 @@
   </div>
 
   <div class="modal-backdrop" hidden>
+    <section
+      id="help-dialog"
+      class="popup-dialog help-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="help-dialog-title"
+      aria-describedby="help-dialog-description"
+      tabindex="-1"
+      hidden
+    >
+      <header class="dialog-header help-dialog-header">
+        <div>
+          <h2 id="help-dialog-title">How to use presets</h2>
+          <p id="help-dialog-description">Quick instructions for the main popup workflows.</p>
+        </div>
+        <button id="close-help" class="dialog-close-button" type="button" aria-label="Close help">
+          <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+            <path d="M6 6l12 12M18 6 6 18"></path>
+          </svg>
+        </button>
+      </header>
+
+      <div id="help-content" class="help-content">
+        <h3 id="help-save-title">Save current filters</h3>
+        <p>Open a Power BI report, set the filters you want, then click Save current filters. Review the captured filters and save them as a preset.</p>
+
+        <h3 id="help-apply-title">Apply a preset</h3>
+        <p>Select a saved preset and click Apply preset. The extension tries to set the report filters to the saved values and shows any missing filters or values in the log.</p>
+
+        <h3 id="help-copy-title">Copy JSON</h3>
+        <p>Select a preset and click Copy preset JSON to copy a shareable preset document for backup or sharing.</p>
+
+        <h3 id="help-add-title">Add a preset</h3>
+        <p>Click New preset to create a preset manually. You can update the JSON draft before saving.</p>
+
+        <h3 id="help-paste-title">Paste JSON</h3>
+        <p>In New preset, click Paste JSON to insert a copied preset document from the clipboard. The extension validates it before saving.</p>
+      </div>
+    </section>
+
     <section
       id="save-review-dialog"
       class="popup-dialog save-review-dialog"
