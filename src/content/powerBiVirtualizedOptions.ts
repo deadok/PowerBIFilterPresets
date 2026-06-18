@@ -13,13 +13,10 @@ import {
   shouldUseWheelFallback,
   type SlicerListboxSnapshot
 } from "./powerBiScrollStrategies";
+import { defaultPowerBiTiming, type PowerBiTiming } from "./powerBiTiming";
 
 const DROPDOWN_OPTIONS_INTERVAL_MS = 25;
 const SLICER_SCROLL_RENDER_TIMEOUT_MS = 200;
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
 
 function listboxesForOptions(options: HTMLElement[]): HTMLElement[] {
   const listboxes: HTMLElement[] = [];
@@ -99,12 +96,13 @@ async function waitForSlicerScrollRender(
   control: SlicerControl,
   title: string,
   previousSignature: string,
-  intervalMs: number
+  intervalMs: number,
+  timing: PowerBiTiming
 ): Promise<void> {
-  const deadline = Date.now() + SLICER_SCROLL_RENDER_TIMEOUT_MS;
+  const deadline = timing.now() + SLICER_SCROLL_RENDER_TIMEOUT_MS;
 
-  while (Date.now() <= deadline) {
-    await delay(intervalMs);
+  while (timing.now() <= deadline) {
+    await timing.delay(intervalMs);
 
     const liveSnapshots = slicerListboxSnapshots(root, control, title);
     const liveSignature = listboxSnapshotsSignature(liveSnapshots);
@@ -120,8 +118,13 @@ export async function scanSlicerOptions(
   title: string,
   initialOptions: HTMLElement[],
   onOptions: (options: HTMLElement[]) => void | Promise<void>,
-  intervalMs = DROPDOWN_OPTIONS_INTERVAL_MS
+  options: {
+    intervalMs?: number;
+    timing?: PowerBiTiming;
+  } = {}
 ): Promise<boolean> {
+  const intervalMs = options.intervalMs ?? DROPDOWN_OPTIONS_INTERVAL_MS;
+  const timing = options.timing ?? defaultPowerBiTiming;
   const initialListboxes = slicerListboxSnapshots(root, control, title);
   const listboxes =
     initialListboxes.length > 0
@@ -153,9 +156,9 @@ export async function scanSlicerOptions(
       }
 
       if (scrolled) {
-        await waitForSlicerScrollRender(root, control, title, signatureBeforeScroll, intervalMs);
+        await waitForSlicerScrollRender(root, control, title, signatureBeforeScroll, intervalMs, timing);
       } else {
-        await delay(intervalMs);
+        await timing.delay(intervalMs);
       }
 
       const liveSnapshots = slicerListboxSnapshots(root, control, title);
@@ -173,13 +176,15 @@ export async function scanSlicerOptions(
         snapshotProvider,
         snapshotsSignature,
         onOptions,
-        intervalMs
+        intervalMs,
+        timing
       });
       await scanSnapshotsByScrollbarDrag({
         snapshotProvider,
         snapshotsSignature,
         onOptions,
-        intervalMs
+        intervalMs,
+        timing
       });
     }
   }

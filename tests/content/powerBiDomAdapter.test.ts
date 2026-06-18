@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createPowerBiDomAdapter } from "../../src/content/powerBiDomAdapter";
+import { createPowerBiDomAdapter as createAdapterWithDefaults } from "../../src/content/powerBiDomAdapter";
+import { createDeterministicPowerBiTiming } from "../../src/content/powerBiTiming";
 
 const testDir = dirname(fileURLToPath(import.meta.url));
 const fixture = readFileSync(resolve(testDir, "../fixtures/powerbi-list-filters.html"), "utf8");
@@ -10,6 +11,9 @@ const fixture = readFileSync(resolve(testDir, "../fixtures/powerbi-list-filters.
 describe("createPowerBiDomAdapter", () => {
   let testAbortController: AbortController;
   let testTimers: number[];
+
+  const createAdapter = (root: ParentNode = document, options: { realTime?: boolean } = {}) =>
+    createAdapterWithDefaults(root, options.realTime ? {} : { timing: createDeterministicPowerBiTiming() });
 
   const addDocumentListener = <K extends keyof DocumentEventMap>(
     type: K,
@@ -68,7 +72,7 @@ describe("createPowerBiDomAdapter", () => {
   });
 
   it("reads selected values from list filters", async () => {
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document, { realTime: true });
 
     await expect(adapter.readListFilters()).resolves.toEqual([
       { title: "Region", type: "list", selectedLabels: ["EMEA", "Americas"] },
@@ -77,7 +81,7 @@ describe("createPowerBiDomAdapter", () => {
   });
 
   it("skips unsupported filters", async () => {
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document, { realTime: true });
 
     const filters = await adapter.readListFilters();
     expect(filters.map((filter) => filter.title)).not.toContain("Revenue");
@@ -109,7 +113,7 @@ describe("createPowerBiDomAdapter", () => {
         </section>
       </main>
     `;
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document, { realTime: true });
 
     await expect(adapter.readListFilters()).resolves.toEqual([
       { title: "Product", type: "list", selectedLabels: ["Data Platform"] }
@@ -160,7 +164,7 @@ describe("createPowerBiDomAdapter", () => {
         </div>`
       );
     });
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document, { realTime: true });
 
     await expect(adapter.readListFilters()).resolves.toEqual([
       { title: "Product", type: "list", selectedLabels: ["ops", "rating", "alerts", "education"] }
@@ -238,7 +242,7 @@ describe("createPowerBiDomAdapter", () => {
       );
     });
 
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document, { realTime: true });
 
     await expect(adapter.readListFilters()).resolves.toEqual([
       { title: "Направление", type: "list", selectedLabels: [] },
@@ -298,7 +302,7 @@ describe("createPowerBiDomAdapter", () => {
       );
     });
 
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document, { realTime: true });
 
     await expect(adapter.readListFilters()).resolves.toEqual([
       { title: "Продукт", type: "list", selectedLabels: ["Ядро персонализации", "Яндекс Трекер"] }
@@ -351,7 +355,7 @@ describe("createPowerBiDomAdapter", () => {
         closePopup();
       }
     });
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document, { realTime: true });
 
     await expect(adapter.readListFilters()).resolves.toEqual([
       { title: "Product", type: "list", selectedLabels: ["ops"] }
@@ -395,7 +399,7 @@ describe("createPowerBiDomAdapter", () => {
         closePopup();
       }
     });
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document, { realTime: true });
 
     await expect(adapter.readListFilters()).resolves.toEqual([{ title: "Product", type: "list", selectedLabels: [] }]);
     expect(document.querySelector(".slicer-dropdown-popup")).toBeNull();
@@ -461,7 +465,7 @@ describe("createPowerBiDomAdapter", () => {
         closePopup();
       }
     });
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document, { realTime: true });
 
     await expect(adapter.readListFilters()).resolves.toEqual([
       { title: "Продукт", type: "list", selectedLabels: ["ГЕО и сервисы"] }
@@ -531,7 +535,7 @@ describe("createPowerBiDomAdapter", () => {
         closePopup();
       }
     });
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document, { realTime: true });
 
     await expect(adapter.readListFilters()).resolves.toEqual([
       { title: "Продукт", type: "list", selectedLabels: ["ГЕО и сервисы"] }
@@ -606,7 +610,7 @@ describe("createPowerBiDomAdapter", () => {
         closePopup();
       }
     });
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document, { realTime: true });
 
     await expect(adapter.readListFilters()).resolves.toEqual([
       { title: "Продукт", type: "list", selectedLabels: ["Ядро персонализации", "Яндекс Трекер"] }
@@ -657,7 +661,7 @@ describe("createPowerBiDomAdapter", () => {
         closePopup();
       }
     });
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document, { realTime: true });
 
     await expect(adapter.readListFilters()).resolves.toEqual([
       { title: "Продукт", type: "list", selectedLabels: ["ГЕО и сервисы"] }
@@ -708,14 +712,14 @@ describe("createPowerBiDomAdapter", () => {
         closePopup();
       }
     });
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document, { realTime: true });
 
     await expect(adapter.readListFilters()).resolves.toEqual([{ title: "Продукт", type: "list", selectedLabels: [] }]);
     expect(document.querySelector(".slicer-dropdown-popup")).toBeNull();
   });
 
   it("clears current selection and applies saved labels", async () => {
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document, { realTime: true });
 
     await expect(adapter.applyListFilterSelection("Region", ["APAC"])).resolves.toEqual({
       title: "Region",
@@ -731,7 +735,7 @@ describe("createPowerBiDomAdapter", () => {
 
   it("logs clear and select transitions while applying saved labels", async () => {
     const debugSpy = vi.mocked(console.debug);
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document, { realTime: true });
 
     await adapter.applyListFilterSelection("Region", ["APAC"]);
 
@@ -778,7 +782,7 @@ describe("createPowerBiDomAdapter", () => {
       </main>
     `;
     addSlicerOptionClickHandler();
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document, { realTime: true });
 
     await expect(adapter.applyListFilterSelection("Product", ["BI"])).resolves.toEqual({
       title: "Product",
@@ -807,7 +811,7 @@ describe("createPowerBiDomAdapter", () => {
         </section>
       </main>
     `;
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document, { realTime: true });
 
     await expect(adapter.applyListFilterSelection("Product", ["BI"])).resolves.toEqual({
       title: "Product",
@@ -878,7 +882,7 @@ describe("createPowerBiDomAdapter", () => {
         closePopup();
       }
     });
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document, { realTime: true });
 
     await expect(adapter.applyListFilterSelection("Product", ["rating"])).resolves.toEqual({
       title: "Product",
@@ -954,7 +958,7 @@ describe("createPowerBiDomAdapter", () => {
     });
     const narrowRoot = document.querySelector<HTMLElement>("#narrow-root");
     expect(narrowRoot).not.toBeNull();
-    const adapter = createPowerBiDomAdapter(narrowRoot!);
+    const adapter = createAdapter(narrowRoot!);
 
     await expect(adapter.applyListFilterSelection("Product", ["rating"])).resolves.toEqual({
       title: "Product",
@@ -1030,7 +1034,7 @@ describe("createPowerBiDomAdapter", () => {
         closePopup();
       }
     });
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document, { realTime: true });
 
     await expect(adapter.applyListFilterSelection("Product", ["коммуникации", "рейтинг"])).resolves.toEqual({
       title: "Product",
@@ -1070,7 +1074,7 @@ describe("createPowerBiDomAdapter", () => {
       </div>
     `;
     addSlicerOptionClickHandler();
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document, { realTime: true });
 
     await expect(adapter.applyListFilterSelection("Product", ["коммуникации", "рейтинг"])).resolves.toEqual({
       title: "Product",
@@ -1111,7 +1115,7 @@ describe("createPowerBiDomAdapter", () => {
       </main>
     `;
     addSlicerOptionClickHandler();
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document, { realTime: true });
 
     await expect(adapter.applyListFilterSelection("Product", ["коммуникации", "рейтинг"])).resolves.toEqual({
       title: "Product",
@@ -1186,7 +1190,7 @@ describe("createPowerBiDomAdapter", () => {
         closePopup();
       }
     });
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document, { realTime: true });
 
     try {
       await expect(adapter.applyListFilterSelection("Product", ["rating"])).resolves.toEqual({
@@ -1265,7 +1269,7 @@ describe("createPowerBiDomAdapter", () => {
         closePopup();
       }
     });
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document, { realTime: true });
 
     try {
       await expect(adapter.applyListFilterSelection("Product", ["rating"])).resolves.toEqual({
@@ -1331,7 +1335,7 @@ describe("createPowerBiDomAdapter", () => {
       }
       setRenderedSlicerOptionSelected(option, selectedTitles.has(title));
     });
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document, { realTime: true });
 
     await expect(adapter.applyListFilterSelection("Product", ["rating"])).resolves.toEqual({
       title: "Product",
@@ -1369,7 +1373,7 @@ describe("createPowerBiDomAdapter", () => {
         </div>`
       );
     });
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document, { realTime: true });
 
     await expect(adapter.applyListFilterSelection("Product", [])).resolves.toEqual({
       title: "Product",
@@ -1428,7 +1432,7 @@ describe("createPowerBiDomAdapter", () => {
       }
       setRenderedSlicerOptionSelected(option, selectedTitles.has(title));
     });
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document, { realTime: true });
 
     await expect(adapter.applyListFilterSelection("Product", ["rating"])).resolves.toEqual({
       title: "Product",
@@ -1485,7 +1489,7 @@ describe("createPowerBiDomAdapter", () => {
       }
     };
     document.querySelector<HTMLElement>('[role="combobox"]')?.addEventListener("mousedown", renderPopup);
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document, { realTime: true });
 
     await expect(adapter.applyListFilterSelection("Product", ["rating"])).resolves.toEqual({
       title: "Product",
@@ -1549,7 +1553,7 @@ describe("createPowerBiDomAdapter", () => {
       }
       setRenderedSlicerOptionSelected(option, selectedTitles.has(title));
     });
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document, { realTime: true });
 
     await expect(adapter.applyListFilterSelection("Product", ["rating"])).resolves.toEqual({
       title: "Product",
@@ -1613,7 +1617,7 @@ describe("createPowerBiDomAdapter", () => {
       }
       setRenderedSlicerOptionSelected(option, selectedTitles.has(title));
     });
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document, { realTime: true });
 
     await expect(adapter.applyListFilterSelection("Product", ["rating"])).resolves.toEqual({
       title: "Product",
@@ -1680,7 +1684,7 @@ describe("createPowerBiDomAdapter", () => {
       }
       setRenderedSlicerOptionSelected(option, selectedTitles.has(title));
     });
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document);
 
     await expect(adapter.applyListFilterSelection("Product", ["rating"])).resolves.toEqual({
       title: "Product",
@@ -1774,7 +1778,7 @@ describe("createPowerBiDomAdapter", () => {
         closePopup();
       }
     });
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document);
 
     await expect(adapter.applyListFilterSelection("Product", ["delta"])).resolves.toEqual({
       title: "Product",
@@ -1872,7 +1876,7 @@ describe("createPowerBiDomAdapter", () => {
         closePopup();
       }
     });
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document);
 
     await expect(adapter.applyListFilterSelection("Product", ["delta"])).resolves.toEqual({
       title: "Product",
@@ -1962,7 +1966,7 @@ describe("createPowerBiDomAdapter", () => {
         closePopup();
       }
     });
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document);
 
     await expect(adapter.applyListFilterSelection("Product", ["delta"])).resolves.toEqual({
       title: "Product",
@@ -2100,7 +2104,7 @@ describe("createPowerBiDomAdapter", () => {
         closePopup();
       }
     });
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document);
 
     await expect(adapter.applyListFilterSelection("Product", ["value-020"])).resolves.toEqual({
       title: "Product",
@@ -2169,7 +2173,7 @@ describe("createPowerBiDomAdapter", () => {
         closePopup();
       }
     });
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document);
 
     await expect(adapter.applyListFilterSelection("Product", ["value-499"])).resolves.toEqual({
       title: "Product",
@@ -2222,7 +2226,7 @@ describe("createPowerBiDomAdapter", () => {
         closePopup();
       }
     });
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document);
 
     await expect(adapter.applyListFilterSelection("Product", ["rating"])).resolves.toEqual({
       title: "Product",
@@ -2292,7 +2296,7 @@ describe("createPowerBiDomAdapter", () => {
         closePopup();
       }
     });
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document);
 
     await expect(adapter.applyListFilterSelection("Product", ["rating", "alerts"])).resolves.toEqual({
       title: "Product",
@@ -2333,7 +2337,7 @@ describe("createPowerBiDomAdapter", () => {
       </main>
     `;
     addSlicerOptionClickHandler();
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document);
 
     await expect(adapter.applyListFilterSelection("Продукт", ["коммуникации", "обучение"])).resolves.toEqual({
       title: "Продукт",
@@ -2348,7 +2352,7 @@ describe("createPowerBiDomAdapter", () => {
   });
 
   it("reports missing filters", async () => {
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document);
 
     await expect(adapter.applyListFilterSelection("Country", ["Brazil"])).resolves.toEqual({
       title: "Country",
@@ -2358,7 +2362,7 @@ describe("createPowerBiDomAdapter", () => {
   });
 
   it("reports missing checkbox values without changing existing selections", async () => {
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document);
 
     await expect(adapter.applyListFilterSelection("Region", ["Brazil"])).resolves.toEqual({
       title: "Region",
@@ -2382,7 +2386,7 @@ describe("createPowerBiDomAdapter", () => {
         <label><input type="checkbox" /> EMEA</label>
       </article>`
     );
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document);
 
     await expect(adapter.applyListFilterSelection("Region", ["EMEA"])).resolves.toEqual({
       title: "Region",
@@ -2393,7 +2397,7 @@ describe("createPowerBiDomAdapter", () => {
 
   it("waits for list filters to appear", async () => {
     document.body.innerHTML = "<main></main>";
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document);
     const waitPromise = adapter.waitForFilterControls({ timeoutMs: 200, intervalMs: 10 });
 
     document.body.innerHTML = fixture;
@@ -2403,7 +2407,7 @@ describe("createPowerBiDomAdapter", () => {
 
   it("waits for Power BI slicer controls to appear", async () => {
     document.body.innerHTML = "<main></main>";
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document);
     const waitPromise = adapter.waitForFilterControls({ timeoutMs: 200, intervalMs: 10 });
 
     document.body.innerHTML = `
@@ -2426,7 +2430,7 @@ describe("createPowerBiDomAdapter", () => {
 
   it("returns false when filters do not appear before timeout", async () => {
     document.body.innerHTML = "<main></main>";
-    const adapter = createPowerBiDomAdapter(document);
+    const adapter = createAdapter(document);
 
     await expect(adapter.waitForFilterControls({ timeoutMs: 1, intervalMs: 1 })).resolves.toBe(false);
   });
