@@ -412,11 +412,22 @@ select:disabled {
 }
 
 .save-review-dialog[hidden],
+.site-access-recommendation-dialog[hidden],
 .help-dialog[hidden],
 .edit-preset-dialog[hidden],
 .reset-edit-preset-dialog[hidden],
 .delete-dialog[hidden] {
   display: none;
+}
+
+.site-access-recommendation-dialog {
+  width: min(100%, 420px);
+  display: grid;
+  gap: 14px;
+}
+
+.site-access-recommendation-dialog p {
+  margin: 0;
 }
 
 .help-dialog {

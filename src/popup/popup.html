@@ -95,6 +95,30 @@
 
   <div class="modal-backdrop" hidden>
     <section
+      id="site-access-recommendation-dialog"
+      class="popup-dialog site-access-recommendation-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="site-access-recommendation-title"
+      aria-describedby="site-access-recommendation-description site-access-recommendation-follow-up"
+      tabindex="-1"
+      hidden
+    >
+      <header class="dialog-header">
+        <h2 id="site-access-recommendation-title">Limit site access for better privacy</h2>
+        <p id="site-access-recommendation-description">
+          For better privacy, consider limiting this extension's site access in Chrome to only your Power BI domains instead of allowing all sites.
+        </p>
+      </header>
+      <p id="site-access-recommendation-follow-up">
+        Open Chrome's Extensions page, click Details on this extension, or right-click the extension icon and select Manage extension. Then set Site access to your specific Power BI report domains.
+      </p>
+      <div class="dialog-actions">
+        <button id="dismiss-site-access-recommendation" class="button-primary" type="button">Got it</button>
+      </div>
+    </section>
+
+    <section
       id="help-dialog"
       class="popup-dialog help-dialog"
       role="dialog"

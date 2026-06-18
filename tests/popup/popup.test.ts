@@ -7,7 +7,10 @@ const testState = vi.hoisted(() => ({
   savePreset: vi.fn(),
   deletePreset: vi.fn(),
   getActiveTab: vi.fn(),
-  sendContentRequestToActiveTab: vi.fn()
+  sendContentRequestToActiveTab: vi.fn(),
+  storageData: {} as Record<string, unknown>,
+  storageGet: vi.fn(),
+  storageSet: vi.fn()
 }));
 
 vi.mock("../../src/shared/presetStore", () => ({
@@ -24,6 +27,7 @@ vi.mock("../../src/popup/contentMessaging", () => ({
 }));
 
 const pageKey = "https://portal.example/reports/sales";
+const siteAccessRecommendationKey = "popup.siteAccessRecommendation.v1.dismissed";
 
 function preset(id: string, name: string): Preset {
   return {
@@ -130,6 +134,14 @@ function helpButton(): HTMLButtonElement {
   return button;
 }
 
+function siteAccessDismissButton(): HTMLButtonElement {
+  const button = document.querySelector<HTMLButtonElement>("#dismiss-site-access-recommendation");
+  if (!button) {
+    throw new Error("Site access dismiss button not found.");
+  }
+  return button;
+}
+
 function confirmDeleteButton(): HTMLButtonElement {
   const button = document.querySelector<HTMLButtonElement>("#confirm-delete");
   if (!button) {
@@ -151,6 +163,38 @@ describe("popup", () => {
     vi.resetModules();
     vi.clearAllMocks();
     vi.restoreAllMocks();
+    testState.storageData = { [siteAccessRecommendationKey]: true };
+    testState.storageGet.mockImplementation(async (keys?: string | string[] | Record<string, unknown>) => {
+      if (typeof keys === "string") {
+        return { [keys]: testState.storageData[keys] };
+      }
+      if (Array.isArray(keys)) {
+        return Object.fromEntries(keys.map((key) => [key, testState.storageData[key]]));
+      }
+      if (!keys) {
+        return { ...testState.storageData };
+      }
+      return Object.fromEntries(
+        Object.entries(keys).map(([key, fallback]) => [
+          key,
+          key in testState.storageData ? testState.storageData[key] : fallback
+        ])
+      );
+    });
+    testState.storageSet.mockImplementation(async (items: Record<string, unknown>) => {
+      Object.assign(testState.storageData, items);
+    });
+    Object.defineProperty(globalThis, "chrome", {
+      configurable: true,
+      value: {
+        storage: {
+          local: {
+            get: testState.storageGet,
+            set: testState.storageSet
+          }
+        }
+      }
+    });
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
       value: {
@@ -357,6 +401,72 @@ describe("popup", () => {
 
     expect(document.querySelector<HTMLElement>("#help-dialog")?.hidden).toBe(true);
     expect(document.activeElement).toBe(trigger);
+  });
+
+  it("shows the site-access recommendation on first launch and focuses its dismiss action", async () => {
+    testState.storageData = {};
+    await mountPopup();
+
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>("#site-access-recommendation-dialog")?.hidden).toBe(false);
+    });
+
+    expect(document.querySelector("#site-access-recommendation-title")?.textContent).toBe(
+      "Limit site access for better privacy"
+    );
+    expect(document.querySelector("#site-access-recommendation-description")?.textContent).toContain(
+      "consider limiting this extension's site access"
+    );
+    expect(document.querySelector("#site-access-recommendation-follow-up")?.textContent).toContain(
+      "Open Chrome's Extensions page, click Details on this extension"
+    );
+    expect(document.activeElement).toBe(siteAccessDismissButton());
+    expect(chrome.storage.local.get).toHaveBeenCalledWith(siteAccessRecommendationKey);
+    expect(chrome.storage.local.set).not.toHaveBeenCalled();
+  });
+
+  it("dismisses the site-access recommendation once, stores the flag, and restores focus to Save current filters", async () => {
+    testState.storageData = {};
+    await mountPopup();
+
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>("#site-access-recommendation-dialog")?.hidden).toBe(false);
+    });
+
+    click(siteAccessDismissButton());
+
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>("#site-access-recommendation-dialog")?.hidden).toBe(true);
+    });
+
+    expect(chrome.storage.local.set).toHaveBeenCalledWith({ [siteAccessRecommendationKey]: true });
+    expect(document.activeElement).toBe(document.querySelector("#save-current"));
+  });
+
+  it("does not show the site-access recommendation after it was previously dismissed", async () => {
+    await mountPopup();
+
+    expect(document.querySelector<HTMLElement>("#site-access-recommendation-dialog")?.hidden).toBe(true);
+    expect(document.activeElement).not.toBe(document.querySelector("#dismiss-site-access-recommendation"));
+    expect(chrome.storage.local.set).not.toHaveBeenCalled();
+  });
+
+  it("treats Escape as dismissal for the site-access recommendation", async () => {
+    testState.storageData = {};
+    await mountPopup();
+
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>("#site-access-recommendation-dialog")?.hidden).toBe(false);
+    });
+
+    document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>("#site-access-recommendation-dialog")?.hidden).toBe(true);
+    });
+
+    expect(chrome.storage.local.set).toHaveBeenCalledWith({ [siteAccessRecommendationKey]: true });
+    expect(document.activeElement).toBe(document.querySelector("#save-current"));
   });
 
   it("pastes valid preset JSON, adopts the pasted name, and replaces source identity", async () => {

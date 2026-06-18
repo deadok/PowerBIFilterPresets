@@ -15,6 +15,10 @@ import { normalizePageUrl } from "../shared/url";
 
 type PopupDependencies = {
   store: PresetStore;
+  uiStorage: {
+    get(key: string): Promise<Record<string, unknown>>;
+    set(items: Record<string, unknown>): Promise<void>;
+  };
   getActiveTab: typeof getActiveTab;
   sendContentRequest: SendContentRequest;
   readClipboardText: () => Promise<string>;
@@ -23,10 +27,31 @@ type PopupDependencies = {
   randomUUID: () => string;
 };
 
-type ActiveDialog = "help" | "save" | "create" | "createReset" | "edit" | "editReset" | "delete";
+type ActiveDialog =
+  | "siteAccessRecommendation"
+  | "help"
+  | "save"
+  | "create"
+  | "createReset"
+  | "edit"
+  | "editReset"
+  | "delete";
+
+const siteAccessRecommendationKey = "popup.siteAccessRecommendation.v1.dismissed";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Popup action failed.";
+}
+
+async function hasDismissedSiteAccessRecommendation(
+  storage: PopupDependencies["uiStorage"]
+): Promise<boolean> {
+  const result = await storage.get(siteAccessRecommendationKey);
+  return result[siteAccessRecommendationKey] === true;
+}
+
+async function dismissSiteAccessRecommendation(storage: PopupDependencies["uiStorage"]): Promise<void> {
+  await storage.set({ [siteAccessRecommendationKey]: true });
 }
 
 function runPopupAction(element: HTMLOutputElement, action: () => Promise<void>): void {
@@ -43,6 +68,8 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     pageStatus,
     saveButton,
     helpButton,
+    siteAccessRecommendationDialog,
+    dismissSiteAccessRecommendationButton,
     createButton,
     applyButton,
     exportButton,
@@ -109,6 +136,7 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     background: popupContent,
     backdrop: modalBackdrop,
     dialogs: {
+      siteAccessRecommendation: siteAccessRecommendationDialog,
       help: helpDialog,
       save: saveDialog,
       create: createDialog,
@@ -201,6 +229,59 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
       return;
     }
     closeHelpButton.focus();
+  }
+
+  let siteAccessRecommendationDismissalInFlight = false;
+
+  function setSiteAccessRecommendationBusy(busy: boolean): void {
+    siteAccessRecommendationDismissalInFlight = busy;
+    dismissSiteAccessRecommendationButton.disabled = busy;
+    if (busy) {
+      siteAccessRecommendationDialog.setAttribute("aria-busy", "true");
+    } else {
+      siteAccessRecommendationDialog.removeAttribute("aria-busy");
+    }
+  }
+
+  function openSiteAccessRecommendation(): void {
+    if (captureInFlight || dialogState.active || !openDialog("siteAccessRecommendation")) {
+      return;
+    }
+    dismissSiteAccessRecommendationButton.focus();
+  }
+
+  function closeSiteAccessRecommendation(restoreFocus: boolean): void {
+    const wasActive = dialogState.active === "siteAccessRecommendation";
+    closeDialog("siteAccessRecommendation");
+    if (!wasActive) {
+      return;
+    }
+    if (restoreFocus) {
+      saveButton.focus();
+    }
+  }
+
+  async function handleSiteAccessRecommendationDismiss(): Promise<void> {
+    if (siteAccessRecommendationDismissalInFlight) {
+      return;
+    }
+
+    setSiteAccessRecommendationBusy(true);
+    try {
+      await dismissSiteAccessRecommendation(dependencies.uiStorage);
+      closeSiteAccessRecommendation(true);
+    } catch (error: unknown) {
+      closeSiteAccessRecommendation(true);
+      renderResult(
+        result,
+        createResultLine(
+          `Couldn't save the site-access reminder preference: ${errorMessage(error)} The reminder may appear again.`,
+          "error"
+        )
+      );
+    } finally {
+      setSiteAccessRecommendationBusy(false);
+    }
   }
 
   function closeHelp(restoreFocus: boolean): void {
@@ -411,6 +492,9 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
   });
 
   helpButton.addEventListener("click", openHelp);
+  dismissSiteAccessRecommendationButton.addEventListener("click", () => {
+    void handleSiteAccessRecommendationDismiss();
+  });
   closeHelpButton.addEventListener("click", () => {
     closeHelp(true);
   });
@@ -474,6 +558,10 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
       }
       if (dialogState.active === "save") {
         saveReviewDialogController.close(true);
+      } else if (dialogState.active === "siteAccessRecommendation") {
+        if (!siteAccessRecommendationDismissalInFlight) {
+          void handleSiteAccessRecommendationDismiss();
+        }
       } else if (dialogState.active === "help") {
         closeHelp(true);
       } else if (dialogState.active === "create") {
@@ -494,12 +582,16 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
   });
 
   await refreshPresets();
+  if (!(await hasDismissedSiteAccessRecommendation(dependencies.uiStorage))) {
+    openSiteAccessRecommendation();
+  }
 }
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (app) {
   const dependencies: PopupDependencies = {
     store: createPresetStore(),
+    uiStorage: chrome.storage.local,
     getActiveTab,
     sendContentRequest: sendContentRequestToActiveTab,
     readClipboardText: () => {

@@ -3,6 +3,8 @@ export type PopupElements = {
   pageStatus: HTMLParagraphElement;
   saveButton: HTMLButtonElement;
   helpButton: HTMLButtonElement;
+  siteAccessRecommendationDialog: HTMLElement;
+  dismissSiteAccessRecommendationButton: HTMLButtonElement;
   createButton: HTMLButtonElement;
   applyButton: HTMLButtonElement;
   exportButton: HTMLButtonElement;
@@ -85,6 +87,11 @@ export function getPopupElements(root: ParentNode): PopupElements {
     pageStatus: requiredElement<HTMLParagraphElement>(root, "#page-status"),
     saveButton: requiredElement<HTMLButtonElement>(root, "#save-current"),
     helpButton: requiredElement<HTMLButtonElement>(root, "#show-help"),
+    siteAccessRecommendationDialog: requiredElement<HTMLElement>(root, "#site-access-recommendation-dialog"),
+    dismissSiteAccessRecommendationButton: requiredElement<HTMLButtonElement>(
+      root,
+      "#dismiss-site-access-recommendation"
+    ),
     createButton: requiredElement<HTMLButtonElement>(root, "#create-preset"),
     applyButton,
     exportButton,
