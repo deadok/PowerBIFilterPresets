@@ -46,6 +46,18 @@ describe("decodeContentResponse", () => {
         results: [{ title: "Region", status: "unknown", message: "Invalid." }]
       })
     ).toBeUndefined();
+    expect(
+      decodeContentResponse(applyRequest, {
+        ok: true,
+        results: [{ title: "Region", status: "saved", message: "Saved 1 value." }]
+      })
+    ).toBeUndefined();
+    expect(
+      decodeContentResponse(applyRequest, {
+        ok: true,
+        results: [{ title: "Region", status: "skipped_unsupported", message: "Skipped unsupported filter." }]
+      })
+    ).toBeUndefined();
     expect(decodeContentResponse(readRequest, { ok: false, error: 4 })).toBeUndefined();
   });
 });

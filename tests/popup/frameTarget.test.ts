@@ -5,8 +5,8 @@ describe("selectBestFrameForFilters", () => {
   it("selects the frame with supported filters", () => {
     expect(
       selectBestFrameForFilters([
-        { frameId: 0, href: "https://portal.example/report", title: "Portal", supportedFilterCount: 0 },
-        { frameId: 7, href: "https://portal.example/powerbi", title: "Power BI", supportedFilterCount: 12 }
+        { frameId: 0, supportedFilterCount: 0 },
+        { frameId: 7, supportedFilterCount: 12 }
       ])
     ).toBe(7);
   });
@@ -14,18 +14,14 @@ describe("selectBestFrameForFilters", () => {
   it("uses the frame with the highest number of supported filters", () => {
     expect(
       selectBestFrameForFilters([
-        { frameId: 3, href: "https://portal.example/metadata", title: "Metadata", supportedFilterCount: 1 },
-        { frameId: 8, href: "https://portal.example/powerbi", title: "Power BI", supportedFilterCount: 16 }
+        { frameId: 3, supportedFilterCount: 1 },
+        { frameId: 8, supportedFilterCount: 16 }
       ])
     ).toBe(8);
   });
 
   it("returns undefined when no frame has supported filters", () => {
-    expect(
-      selectBestFrameForFilters([
-        { frameId: 0, href: "https://portal.example/report", title: "Portal", supportedFilterCount: 0 }
-      ])
-    ).toBeUndefined();
+    expect(selectBestFrameForFilters([{ frameId: 0, supportedFilterCount: 0 }])).toBeUndefined();
   });
 
   it("counts slicers that expose search UI instead of a combobox", () => {
@@ -40,6 +36,6 @@ describe("selectBestFrameForFilters", () => {
       </section>
     `;
 
-    expect(probeFrameForSupportedFilters().supportedFilterCount).toBe(1);
+    expect(probeFrameForSupportedFilters()).toEqual({ supportedFilterCount: 1 });
   });
 });

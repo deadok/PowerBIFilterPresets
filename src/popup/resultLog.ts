@@ -19,9 +19,7 @@ export function createResultLine(text: string, severity: ResultSeverity): Result
 export function applyStatusSeverity(status: OperationStatus): ResultSeverity {
   switch (status) {
     case "applied":
-    case "saved":
       return "normal";
-    case "skipped_unsupported":
     case "missing_filter":
     case "ambiguous_filter":
     case "missing_value":
