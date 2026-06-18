@@ -1,3 +1,5 @@
+import type { PowerBiTiming } from "./powerBiTiming";
+
 export type SlicerListboxSnapshot = {
   listbox: HTMLElement;
   scrollElement: HTMLElement;
@@ -17,6 +19,7 @@ type SnapshotScanOptions = {
   snapshotsSignature: (snapshots: SlicerListboxSnapshot[]) => string;
   onOptions: (options: HTMLElement[]) => void | Promise<void>;
   intervalMs: number;
+  timing: PowerBiTiming;
 };
 
 const SLICER_SCROLL_RENDER_TIMEOUT_MS = 200;
@@ -27,10 +30,6 @@ const SLICER_WHEEL_SCAN_MIN_OPTIONS = 8;
 const SLICER_WHEEL_SCAN_STABLE_STEPS = 3;
 const SLICER_SCROLLBAR_DRAG_MAX_STEPS = 30;
 const SLICER_SCROLLBAR_DRAG_STABLE_STEPS = 3;
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
 
 export function shouldUseWheelFallback(initialOptionCount: number): boolean {
   return initialOptionCount >= SLICER_WHEEL_SCAN_MIN_OPTIONS;
@@ -205,12 +204,13 @@ async function waitForSnapshotRender(
   snapshotProvider: SnapshotProvider,
   snapshotsSignature: (snapshots: SlicerListboxSnapshot[]) => string,
   previousSignature: string,
-  intervalMs: number
+  intervalMs: number,
+  timing: PowerBiTiming
 ): Promise<void> {
-  const deadline = Date.now() + SLICER_SCROLL_RENDER_TIMEOUT_MS;
+  const deadline = timing.now() + SLICER_SCROLL_RENDER_TIMEOUT_MS;
 
-  while (Date.now() <= deadline) {
-    await delay(intervalMs);
+  while (timing.now() <= deadline) {
+    await timing.delay(intervalMs);
 
     const liveSnapshots = snapshotProvider();
     const liveSignature = snapshotsSignature(liveSnapshots);
@@ -241,7 +241,8 @@ export async function scanSnapshotsByWheel(options: SnapshotScanOptions): Promis
       options.snapshotProvider,
       options.snapshotsSignature,
       previousSignature,
-      options.intervalMs
+      options.intervalMs,
+      options.timing
     );
 
     const liveSnapshots = options.snapshotProvider();
@@ -274,7 +275,8 @@ export async function scanSnapshotsByScrollbarDrag(options: SnapshotScanOptions)
       options.snapshotProvider,
       options.snapshotsSignature,
       previousSignature,
-      options.intervalMs
+      options.intervalMs,
+      options.timing
     );
     const liveSnapshots = options.snapshotProvider();
     previousSignature = options.snapshotsSignature(liveSnapshots);
@@ -306,7 +308,8 @@ export async function scanSnapshotsByScrollbarDrag(options: SnapshotScanOptions)
       options.snapshotProvider,
       options.snapshotsSignature,
       previousSignature,
-      options.intervalMs
+      options.intervalMs,
+      options.timing
     );
 
     const liveSnapshots = options.snapshotProvider();

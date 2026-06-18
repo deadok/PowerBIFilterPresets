@@ -25,12 +25,17 @@ import {
   type SlicerControl
 } from "./powerBiDiscovery";
 import { activateElement, closeDropdownOpenedForRead } from "./powerBiInteraction";
+import { defaultPowerBiTiming, type PowerBiTiming } from "./powerBiTiming";
 import { liveSlicerListboxes, liveSlicerOptionByLabel, scanSlicerOptions } from "./powerBiVirtualizedOptions";
 
 type PowerBiDomAdapter = {
   waitForFilterControls(options?: { timeoutMs?: number; intervalMs?: number }): Promise<boolean>;
   readListFilters(): Promise<FilterPresetItem[]>;
   applyListFilterSelection(title: string, selectedLabels: string[]): Promise<FilterOperationResult>;
+};
+
+type PowerBiDomAdapterOptions = {
+  timing?: PowerBiTiming;
 };
 
 type SelectionTransition = {
@@ -46,13 +51,13 @@ const DROPDOWN_OPTIONS_INTERVAL_MS = 25;
 const SLICER_SELECTION_VERIFY_TIMEOUT_MS = 250;
 const LOG_PREFIX = "[Power BI Presets]";
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
-
-function closeSlicerDropdown(combobox: HTMLElement, options: { title?: string } = {}): Promise<void> {
+function closeSlicerDropdown(
+  combobox: HTMLElement,
+  timing: PowerBiTiming,
+  options: { title?: string } = {}
+): Promise<void> {
   return closeDropdownOpenedForRead(combobox, {
-    delay,
+    delay: timing.delay,
     logPrefix: LOG_PREFIX,
     title: options.title
   });
@@ -61,6 +66,7 @@ function closeSlicerDropdown(combobox: HTMLElement, options: { title?: string } 
 async function resolveSlicerOptions(
   root: ParentNode,
   control: SlicerControl,
+  timing: PowerBiTiming,
   options: {
     dropdownOptionsIntervalMs?: number;
     dropdownOptionsTimeoutMs?: number;
@@ -91,12 +97,12 @@ async function resolveSlicerOptions(
   options.onOpened?.(combobox);
   const timeoutMs = options.dropdownOptionsTimeoutMs ?? DROPDOWN_OPTIONS_TIMEOUT_MS;
   const intervalMs = options.dropdownOptionsIntervalMs ?? DROPDOWN_OPTIONS_INTERVAL_MS;
-  const deadline = Date.now() + timeoutMs;
+  const deadline = timing.now() + timeoutMs;
   let externalOptions = externalSlicerOptions(dropdownRoots, control.title);
   options.onWaitingForExternalOptions?.(timeoutMs, intervalMs);
 
-  while (!hasSlicerValueOption(externalOptions) && Date.now() <= deadline) {
-    await delay(intervalMs);
+  while (!hasSlicerValueOption(externalOptions) && timing.now() <= deadline) {
+    await timing.delay(intervalMs);
     externalOptions = externalSlicerOptions(dropdownRoots, control.title);
   }
 
@@ -154,6 +160,7 @@ function setCheckbox(checkbox: HTMLInputElement, checked: boolean): SelectionTra
 async function setSlicerOption(
   option: HTMLElement,
   selected: boolean,
+  timing: PowerBiTiming,
   findLiveOption: (label: string) => HTMLElement | null = () => null
 ): Promise<SelectionTransition> {
   const label = labelForSlicerOption(option);
@@ -165,15 +172,15 @@ async function setSlicerOption(
     activateElement(liveOption);
   }
 
-  const deadline = Date.now() + SLICER_SELECTION_VERIFY_TIMEOUT_MS;
+  const deadline = timing.now() + SLICER_SELECTION_VERIFY_TIMEOUT_MS;
   let updatedLiveOption = findLiveOption(label) ?? (liveOption.isConnected ? liveOption : null);
   while (
     clickAttempted &&
     updatedLiveOption &&
     isSlicerOptionSelected(updatedLiveOption) !== selected &&
-    Date.now() <= deadline
+    timing.now() <= deadline
   ) {
-    await delay(DROPDOWN_OPTIONS_INTERVAL_MS);
+    await timing.delay(DROPDOWN_OPTIONS_INTERVAL_MS);
     updatedLiveOption = findLiveOption(label) ?? (liveOption.isConnected ? liveOption : null);
   }
   const afterSelected = updatedLiveOption ? isSlicerOptionSelected(updatedLiveOption) : beforeSelected;
@@ -191,6 +198,7 @@ async function applySlicerOptionsSelection(
   control: SlicerControl,
   title: string,
   selectedLabels: string[],
+  timing: PowerBiTiming,
   options: {
     dropdownOptionsTimeoutMs?: number;
     onOpened?: (combobox: HTMLElement) => void;
@@ -202,19 +210,26 @@ async function applySlicerOptionsSelection(
   const availableLabels: string[] = [];
   const failedLabels: string[] = [];
   const seenLabels = new Set<string>();
-  const initialOptions = await resolveSlicerOptions(root, control, options);
+  const initialOptions = await resolveSlicerOptions(root, control, timing, options);
 
-  const discoveryCompleted = await scanSlicerOptions(root, control, title, initialOptions, (currentOptions) => {
-    for (const option of currentOptions) {
-      const label = labelForSlicerOption(option);
-      if (label.length === 0 || label === "Select all" || seenLabels.has(label)) {
-        continue;
+  const discoveryCompleted = await scanSlicerOptions(
+    root,
+    control,
+    title,
+    initialOptions,
+    (currentOptions) => {
+      for (const option of currentOptions) {
+        const label = labelForSlicerOption(option);
+        if (label.length === 0 || label === "Select all" || seenLabels.has(label)) {
+          continue;
+        }
+
+        seenLabels.add(label);
+        availableLabels.push(label);
       }
-
-      seenLabels.add(label);
-      availableLabels.push(label);
-    }
-  });
+    },
+    { timing }
+  );
 
   const missingLabels = selectedLabels.filter((label) => !seenLabels.has(label));
 
@@ -242,7 +257,7 @@ async function applySlicerOptionsSelection(
       }
 
       const selected = desiredLabels.has(label);
-      const transition = await setSlicerOption(option, selected, (currentLabel) =>
+      const transition = await setSlicerOption(option, selected, timing, (currentLabel) =>
         liveSlicerOptionByLabel(root, control, title, currentLabel)
       );
       logSelectionTransition(
@@ -257,12 +272,12 @@ async function applySlicerOptionsSelection(
       }
       appliedLabels.add(label);
     }
-  });
+  }, { timing });
 
   return { availableLabels, failedLabels, missingLabels, scanCompleted: applyCompleted };
 }
 
-async function selectedLabelsForControl(root: ParentNode, control: ListControl): Promise<string[]> {
+async function selectedLabelsForControl(root: ParentNode, control: ListControl, timing: PowerBiTiming): Promise<string[]> {
   if (control.kind === "checkbox") {
     return Array.from(control.element.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
       .filter((checkbox) => checkbox.checked || checkbox.getAttribute("aria-checked") === "true")
@@ -274,7 +289,7 @@ async function selectedLabelsForControl(root: ParentNode, control: ListControl):
 
   try {
     const readSelectedLabels = async (forceOpenDropdown = false): Promise<string[]> => {
-      const options = await resolveSlicerOptions(root, control, {
+      const options = await resolveSlicerOptions(root, control, timing, {
         forceOpenDropdown,
         onOpened: (combobox) => {
           openedCombobox = combobox;
@@ -286,7 +301,7 @@ async function selectedLabelsForControl(root: ParentNode, control: ListControl):
         selectedLabels.push(
           ...selectedLabelsFromSlicerOptions(currentOptions).filter((label) => !selectedLabels.includes(label))
         );
-      });
+      }, { timing });
 
       return selectedLabels;
     };
@@ -306,7 +321,7 @@ async function selectedLabelsForControl(root: ParentNode, control: ListControl):
     return selectedLabelsFromComboboxSummary(control);
   } finally {
     if (openedCombobox) {
-      await closeSlicerDropdown(openedCombobox);
+      await closeSlicerDropdown(openedCombobox, timing);
     }
   }
 }
@@ -345,18 +360,19 @@ function isSlicerAlreadyClear(root: ParentNode, control: SlicerControl): boolean
   return selectedLabelsFromSlicerOptions(materializedOptions).length === 0;
 }
 
-export function createPowerBiDomAdapter(root: ParentNode = document): PowerBiDomAdapter {
+export function createPowerBiDomAdapter(root: ParentNode = document, options: PowerBiDomAdapterOptions = {}): PowerBiDomAdapter {
+  const timing = options.timing ?? defaultPowerBiTiming;
   return {
     async waitForFilterControls(options = {}) {
       const timeoutMs = options.timeoutMs ?? 8000;
       const intervalMs = options.intervalMs ?? 250;
-      const deadline = Date.now() + timeoutMs;
+      const deadline = timing.now() + timeoutMs;
 
-      while (Date.now() <= deadline) {
+      while (timing.now() <= deadline) {
         if (listFilterControls(root).length > 0) {
           return true;
         }
-        await delay(intervalMs);
+        await timing.delay(intervalMs);
       }
 
       return false;
@@ -368,7 +384,7 @@ export function createPowerBiDomAdapter(root: ParentNode = document): PowerBiDom
       const initialSlicerSelections = initiallyMaterializedSlicerSelections(root, controls);
 
       for (const control of controls) {
-        const capturedLabels = await selectedLabelsForControl(root, control);
+        const capturedLabels = await selectedLabelsForControl(root, control, timing);
         const selectedLabels =
           control.kind === "slicer" && capturedLabels.length === 0
             ? initialSlicerSelections.get(control.title) ?? capturedLabels
@@ -416,7 +432,7 @@ export function createPowerBiDomAdapter(root: ParentNode = document): PowerBiDom
             return appliedFilterResult(title, 0);
           }
 
-          const result = await applySlicerOptionsSelection(root, control, title, selectedLabels, {
+          const result = await applySlicerOptionsSelection(root, control, title, selectedLabels, timing, {
             dropdownOptionsTimeoutMs: APPLY_DROPDOWN_OPTIONS_TIMEOUT_MS,
             onOpened: (combobox) => {
               openedCombobox = combobox;
@@ -486,7 +502,7 @@ export function createPowerBiDomAdapter(root: ParentNode = document): PowerBiDom
         return appliedFilterResult(title, selectedLabels.length);
       } finally {
         if (openedCombobox) {
-          await closeSlicerDropdown(openedCombobox, { title });
+          await closeSlicerDropdown(openedCombobox, timing, { title });
         }
       }
     }

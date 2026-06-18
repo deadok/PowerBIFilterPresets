@@ -7,6 +7,7 @@ import {
   type SlicerListboxSnapshot
 } from "../../src/content/powerBiScrollStrategies";
 import { labelForSlicerOption } from "../../src/content/powerBiDiscovery";
+import { createDeterministicPowerBiTiming } from "../../src/content/powerBiTiming";
 
 function snapshotFor(
   listbox: HTMLElement,
@@ -111,7 +112,8 @@ describe("Power BI scroll strategies", () => {
       onOptions: (options) => {
         seenLabels.push(...options.map(labelForSlicerOption));
       },
-      intervalMs: 0
+      intervalMs: 0,
+      timing: createDeterministicPowerBiTiming()
     });
 
     expect(new Set(seenLabels)).toEqual(new Set(["A", "B", "C", "D", "E"]));
@@ -170,7 +172,8 @@ describe("Power BI scroll strategies", () => {
       onOptions: (options) => {
         seenLabels.push(...options.map(labelForSlicerOption));
       },
-      intervalMs: 0
+      intervalMs: 0,
+      timing: createDeterministicPowerBiTiming()
     });
 
     expect(new Set(seenLabels)).toEqual(new Set(["A", "B", "C", "D", "E"]));
