@@ -2,6 +2,7 @@ export type PopupElements = {
   popupContent: HTMLDivElement;
   pageStatus: HTMLParagraphElement;
   saveButton: HTMLButtonElement;
+  helpButton: HTMLButtonElement;
   createButton: HTMLButtonElement;
   applyButton: HTMLButtonElement;
   exportButton: HTMLButtonElement;
@@ -16,6 +17,8 @@ export type PopupElements = {
   presetSelect: HTMLSelectElement;
   result: HTMLOutputElement;
   modalBackdrop: HTMLDivElement;
+  helpDialog: HTMLElement;
+  closeHelpButton: HTMLButtonElement;
   saveDialog: HTMLElement;
   saveNameInput: HTMLInputElement;
   saveNameError: HTMLParagraphElement;
@@ -81,6 +84,7 @@ export function getPopupElements(root: ParentNode): PopupElements {
     popupContent: requiredElement<HTMLDivElement>(root, ".popup-content"),
     pageStatus: requiredElement<HTMLParagraphElement>(root, "#page-status"),
     saveButton: requiredElement<HTMLButtonElement>(root, "#save-current"),
+    helpButton: requiredElement<HTMLButtonElement>(root, "#show-help"),
     createButton: requiredElement<HTMLButtonElement>(root, "#create-preset"),
     applyButton,
     exportButton,
@@ -95,6 +99,8 @@ export function getPopupElements(root: ParentNode): PopupElements {
     presetSelect: requiredElement<HTMLSelectElement>(root, "#preset-select"),
     result: requiredElement<HTMLOutputElement>(root, "#result"),
     modalBackdrop: requiredElement<HTMLDivElement>(root, ".modal-backdrop"),
+    helpDialog: requiredElement<HTMLElement>(root, "#help-dialog"),
+    closeHelpButton: requiredElement<HTMLButtonElement>(root, "#close-help"),
     saveDialog: requiredElement<HTMLElement>(root, "#save-review-dialog"),
     saveNameInput: requiredElement<HTMLInputElement>(root, "#save-name"),
     saveNameError: requiredElement<HTMLParagraphElement>(root, "#save-name-error"),

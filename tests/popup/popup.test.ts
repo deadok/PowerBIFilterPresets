@@ -122,6 +122,14 @@ function newButton(): HTMLButtonElement {
   return button;
 }
 
+function helpButton(): HTMLButtonElement {
+  const button = document.querySelector<HTMLButtonElement>("#show-help");
+  if (!button) {
+    throw new Error("Help button not found.");
+  }
+  return button;
+}
+
 function confirmDeleteButton(): HTMLButtonElement {
   const button = document.querySelector<HTMLButtonElement>("#confirm-delete");
   if (!button) {
@@ -191,9 +199,26 @@ describe("popup", () => {
     expect(logo?.getAttribute("aria-hidden")).toBe("true");
   });
 
+  it("keeps the help trigger in the header and leaves the top action row with Save and New preset only", async () => {
+    await mountPopup([]);
+
+    const header = document.querySelector(".popup-header");
+    const row = document.querySelector(".create-preset-actions");
+
+    expect(header?.lastElementChild).toBe(document.querySelector("#show-help"));
+    expect(Array.from(row?.querySelectorAll("button") ?? []).map((button) => button.id)).toEqual([
+      "save-current",
+      "create-preset"
+    ]);
+  });
+
   it("gives every icon action an accessible name and tooltip", async () => {
     await mountPopup();
 
+    expect(document.querySelector("#show-help")).toMatchObject({
+      ariaLabel: "Show help",
+      title: "Show help"
+    });
     expect(document.querySelector("#create-preset")).toMatchObject({
       ariaLabel: "New preset",
       title: "New preset"
@@ -274,6 +299,64 @@ describe("popup", () => {
       "save-current",
       "create-preset"
     ]);
+  });
+
+  it("opens help instructions as compact text and excludes edit/delete sections", async () => {
+    await mountPopup([preset("one", "One"), preset("two", "Two")]);
+    const select = selectPreset("two");
+
+    click(helpButton());
+
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>("#help-dialog")?.hidden).toBe(false);
+    });
+
+    const helpDialog = document.querySelector<HTMLElement>("#help-dialog");
+    if (!helpDialog) {
+      throw new Error("Help dialog not found.");
+    }
+
+    expect(document.querySelectorAll(".help-section")).toHaveLength(0);
+    expect(document.querySelector("#help-content")?.textContent).toContain("Save current filters");
+    expect(document.querySelector("#help-content")?.textContent).toContain("Apply a preset");
+    expect(document.querySelector("#help-content")?.textContent).toContain("Copy JSON");
+    expect(document.querySelector("#help-content")?.textContent).toContain("Add a preset");
+    expect(document.querySelector("#help-content")?.textContent).toContain("Paste JSON");
+    expect(helpDialog.textContent).not.toContain("Edit preset");
+    expect(helpDialog.textContent).not.toContain("Delete preset");
+    expect(select.value).toBe("two");
+    expect(testState.savePreset).not.toHaveBeenCalled();
+    expect(testState.deletePreset).not.toHaveBeenCalled();
+  });
+
+  it("closes help with its close button and restores focus to Help", async () => {
+    await mountPopup();
+    const trigger = helpButton();
+
+    click(trigger);
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>("#help-dialog")?.hidden).toBe(false);
+    });
+
+    click(document.querySelector("#close-help") as Element);
+
+    expect(document.querySelector<HTMLElement>("#help-dialog")?.hidden).toBe(true);
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("closes help on Escape and restores focus to Help", async () => {
+    await mountPopup();
+    const trigger = helpButton();
+
+    click(trigger);
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>("#help-dialog")?.hidden).toBe(false);
+    });
+
+    document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+
+    expect(document.querySelector<HTMLElement>("#help-dialog")?.hidden).toBe(true);
+    expect(document.activeElement).toBe(trigger);
   });
 
   it("pastes valid preset JSON, adopts the pasted name, and replaces source identity", async () => {
