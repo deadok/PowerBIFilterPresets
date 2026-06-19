@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createCreateDialogController } from "../../src/popup/createDialogController";
+import { installTestMessages, resetTestMessages } from "../../src/shared/i18n/messages";
 import type { PagePresetCollection, Preset } from "../../src/shared/types";
 
 function preset(id: string, name: string): Preset {
@@ -63,6 +64,20 @@ function createFixture() {
 }
 
 describe("createCreateDialogController", () => {
+  beforeEach(() => {
+    installTestMessages(
+      {
+        jsonValidationValid: "Validation passed.",
+        createDialogClipboardDenied: "Clipboard permission was denied.",
+        createDialogClipboardReadFailed: "Clipboard text could not be read."
+      } as Parameters<typeof installTestMessages>[0]
+    );
+  });
+
+  afterEach(() => {
+    resetTestMessages();
+  });
+
   it("opens with a provisional JSON document and resets local draft state", () => {
     const elements = createFixture();
     const controller = createCreateDialogController({
@@ -148,7 +163,7 @@ describe("createCreateDialogController", () => {
     elements.jsonInput.dispatchEvent(new Event("input", { bubbles: true }));
 
     await vi.waitFor(() => {
-      expect(elements.validation.textContent).toBe("JSON is valid.");
+      expect(elements.validation.textContent).toBe("Validation passed.");
     });
 
     controller.confirm();
@@ -169,5 +184,46 @@ describe("createCreateDialogController", () => {
       expect(elements.dialog.hidden).toBe(true);
     });
     expect(document.activeElement).toBe(elements.applyButton);
+  });
+
+  it("shows localized clipboard and JSON validation messages", async () => {
+    const elements = createFixture();
+    const controller = createCreateDialogController({
+      elements,
+      now: () => new Date("2026-06-16T10:00:00.000Z"),
+      randomUUID: () => "created",
+      readClipboardText: vi.fn().mockRejectedValue(Object.assign(new Error("Denied"), { name: "NotAllowedError" })),
+      getCurrentCollection: () => collection([]),
+      savePreset: vi.fn(),
+      isOpenBlocked: () => false,
+      isDialogActive: (dialog) => !(dialog === "create" ? elements.dialog : elements.resetDialog).hidden,
+      openDialog: (dialog) => {
+        (dialog === "create" ? elements.dialog : elements.resetDialog).hidden = false;
+        return true;
+      },
+      closeDialog: (dialog) => {
+        (dialog === "create" ? elements.dialog : elements.resetDialog).hidden = true;
+      },
+      renderCollection: vi.fn(),
+      renderCreated: vi.fn(),
+      errorMessage: (error) => (error instanceof Error ? error.message : String(error))
+    });
+
+    controller.open();
+    const documentJson = JSON.parse(elements.jsonInput.value) as { preset: Preset };
+    documentJson.preset.filters = [{ title: "Region", type: "list", selectedLabels: ["EMEA"] }];
+    elements.jsonInput.value = JSON.stringify(documentJson, null, 2);
+    elements.jsonInput.dispatchEvent(new Event("input", { bubbles: true }));
+
+    await vi.waitFor(() => {
+      expect(elements.validation.textContent).toBe("Validation passed.");
+    });
+
+    elements.pasteJsonButton.click();
+
+    await vi.waitFor(() => {
+      expect(elements.validation.textContent).toBe("Clipboard permission was denied.");
+    });
+    expect(elements.validation.innerHTML).not.toContain("<strong>");
   });
 });

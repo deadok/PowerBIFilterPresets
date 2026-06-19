@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createEditDialogController } from "../../src/popup/editDialogController";
+import { installTestMessages, resetTestMessages } from "../../src/shared/i18n/messages";
 import type { PagePresetCollection, Preset } from "../../src/shared/types";
 
 function preset(id: string, name: string): Preset {
@@ -59,6 +60,16 @@ function createFixture() {
 }
 
 describe("createEditDialogController", () => {
+  beforeEach(() => {
+    installTestMessages({
+      jsonValidationValid: "Validation passed."
+    } as Parameters<typeof installTestMessages>[0]);
+  });
+
+  afterEach(() => {
+    resetTestMessages();
+  });
+
   it("opens an existing preset and restores reset focus without saving", () => {
     const elements = createFixture();
     const existing = preset("one", "Sales review");
@@ -84,7 +95,7 @@ describe("createEditDialogController", () => {
 
     expect(elements.dialog.hidden).toBe(false);
     expect(elements.nameInput.value).toBe("Sales review");
-    expect(elements.validation.textContent).toBe("JSON is valid.");
+    expect(elements.validation.textContent).toBe("Validation passed.");
     expect(JSON.parse(elements.jsonInput.value)).toMatchObject({
       schemaVersion: 1,
       preset: {
@@ -140,7 +151,7 @@ describe("createEditDialogController", () => {
     elements.jsonInput.dispatchEvent(new Event("input", { bubbles: true }));
 
     await vi.waitFor(() => {
-      expect(elements.validation.textContent).toBe("JSON is valid.");
+      expect(elements.validation.textContent).toBe("Validation passed.");
     });
 
     controller.confirm();

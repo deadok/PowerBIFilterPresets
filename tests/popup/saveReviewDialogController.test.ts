@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createSaveReviewDialogController } from "../../src/popup/saveReviewDialogController";
+import { installTestMessages, resetTestMessages } from "../../src/shared/i18n/messages";
 import type { FilterPresetItem, PagePresetCollection, Preset } from "../../src/shared/types";
 
 function filter(title: string, selectedLabels: string[]): FilterPresetItem {
@@ -62,6 +63,26 @@ function createFixture() {
 }
 
 describe("createSaveReviewDialogController", () => {
+  beforeEach(() => {
+    installTestMessages(
+      {
+        saveReviewSelectionCountSingular: "$1 of $2 filter is selected",
+        saveReviewSelectionCountPlural: "$1 of $2 filters are selected",
+        saveReviewSelectionGuidanceRequired: "Choose at least one filter to continue.",
+        saveReviewDefaultName: "Captured preset $1",
+        saveReviewFilterIncludeLabel: "Include filter $1",
+        saveReviewFilterShowValuesLabel: "Show chosen values for $1",
+        saveReviewFilterHideValuesLabel: "Hide chosen values for $1",
+        saveReviewFilterSelectedValueCountSingular: "$1 selected choice",
+        saveReviewFilterSelectedValueCountPlural: "$1 selected choices"
+      } as Parameters<typeof installTestMessages>[0]
+    );
+  });
+
+  afterEach(() => {
+    resetTestMessages();
+  });
+
   it("opens with eligible filters and supports local include/clear/select state", () => {
     const elements = createFixture();
     const controller = createSaveReviewDialogController({
@@ -85,13 +106,13 @@ describe("createSaveReviewDialogController", () => {
     controller.open([filter("Region", ["EMEA"]), filter("Empty", []), filter("Team", ["North"])]);
 
     expect(elements.dialog.hidden).toBe(false);
-    expect(elements.nameInput.value).toMatch(/^Preset /);
+    expect(elements.nameInput.value).toMatch(/^Captured preset /);
     expect(document.activeElement).toBe(elements.nameInput);
     expect(Array.from(elements.reviewList.querySelectorAll(".review-filter-title")).map((node) => node.textContent)).toEqual([
       "Region",
       "Team"
     ]);
-    expect(elements.selectionCount.textContent).toBe("2 of 2 filters selected");
+    expect(elements.selectionCount.textContent).toBe("2 of 2 filters are selected");
 
     elements.clearAllButton.click();
     expect(Array.from(elements.reviewList.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')).map((input) => input.checked)).toEqual([
@@ -99,7 +120,7 @@ describe("createSaveReviewDialogController", () => {
       false
     ]);
     expect(elements.confirmButton.disabled).toBe(true);
-    expect(elements.selectionGuidance.textContent).toBe("Select at least one filter.");
+    expect(elements.selectionGuidance.textContent).toBe("Choose at least one filter to continue.");
 
     elements.selectAllButton.click();
     expect(Array.from(elements.reviewList.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')).map((input) => input.checked)).toEqual([
@@ -107,6 +128,42 @@ describe("createSaveReviewDialogController", () => {
       true
     ]);
     expect(elements.confirmButton.disabled).toBe(false);
+  });
+
+  it("localizes review filter accessibility labels and updates the disclosure label when expanded", () => {
+    const elements = createFixture();
+    const controller = createSaveReviewDialogController({
+      elements,
+      now: () => new Date("2026-06-16T10:00:00.000Z"),
+      randomUUID: () => "00000000-0000-0000-0000-000000000000",
+      getCollection: vi.fn(),
+      savePreset: vi.fn(),
+      openDialog: () => {
+        elements.dialog.hidden = false;
+        return true;
+      },
+      closeDialog: () => {
+        elements.dialog.hidden = true;
+      },
+      renderCollection: vi.fn(),
+      renderSaved: vi.fn(),
+      errorMessage: String
+    });
+
+    controller.open([filter("Region", ["EMEA", "APAC"]), filter("Team", ["North"])]);
+
+    const checkboxes = elements.reviewList.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+    const disclosures = elements.reviewList.querySelectorAll<HTMLButtonElement>(".review-filter-disclosure");
+    const counts = elements.reviewList.querySelectorAll<HTMLElement>(".review-filter-count");
+
+    expect(checkboxes[0]?.getAttribute("aria-label")).toBe("Include filter Region");
+    expect(disclosures[0]?.getAttribute("aria-label")).toBe("Show chosen values for Region");
+    expect(counts[0]?.getAttribute("aria-label")).toBe("2 selected choices");
+    expect(counts[1]?.getAttribute("aria-label")).toBe("1 selected choice");
+
+    disclosures[0]?.click();
+
+    expect(disclosures[0]?.getAttribute("aria-label")).toBe("Hide chosen values for Region");
   });
 
   it("saves included filters and restores local state after storage failure", async () => {

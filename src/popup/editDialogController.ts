@@ -14,6 +14,7 @@ import {
   validateEditPresetJson,
   type EditPresetJsonResult
 } from "../shared/presetJsonEditor";
+import { getMessage } from "../shared/i18n/messages";
 import { createPresetRevision } from "../shared/presetRevision";
 import type { PagePresetCollection, Preset } from "../shared/types";
 
@@ -115,7 +116,7 @@ export function createEditDialogController(options: EditDialogControllerOptions)
     }
 
     if (validation.valid) {
-      renderValidationMessage("JSON is valid.", false);
+      renderValidationMessage(getMessage("jsonValidationValid"), false);
       setMessage(elements.saveError, "");
     } else {
       renderValidationMessage(validation.error.message, true);

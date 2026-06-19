@@ -1,0 +1,296 @@
+{
+  "extensionName": {
+    "message": "Power BI Filter Presets"
+  },
+  "extensionDescription": {
+    "message": "Save and restore local presets for embedded Power BI list filters."
+  },
+  "actionDefaultTitle": {
+    "message": "Power BI Presets"
+  },
+  "popupTitle": {
+    "message": "Power BI Presets"
+  },
+  "popupLoadingCurrentPage": {
+    "message": "Loading current page..."
+  },
+  "popupHelpButtonLabel": {
+    "message": "Show help"
+  },
+  "popupSaveCurrentFilters": {
+    "message": "Save current filters"
+  },
+  "popupCreatePresetLabel": {
+    "message": "New preset"
+  },
+  "popupSelectedPresetLabel": {
+    "message": "Selected preset"
+  },
+  "popupApplyPreset": {
+    "message": "Apply preset"
+  },
+  "popupExportPresetLabel": {
+    "message": "Copy preset JSON"
+  },
+  "popupEditPresetLabel": {
+    "message": "Edit preset"
+  },
+  "popupDeletePresetLabel": {
+    "message": "Delete preset"
+  },
+  "popupSiteAccessRecommendationTitle": {
+    "message": "Limit site access for better privacy"
+  },
+  "popupSiteAccessRecommendationDescription": {
+    "message": "For better privacy, consider limiting this extension's site access in Chrome to only your Power BI domains instead of allowing all sites."
+  },
+  "popupSiteAccessRecommendationFollowUp": {
+    "message": "Open Chrome's Extensions page, click Details on this extension, or right-click the extension icon and select Manage extension. Then set Site access to your specific Power BI report domains."
+  },
+  "popupSiteAccessRecommendationDismiss": {
+    "message": "Got it"
+  },
+  "popupHelpDialogTitle": {
+    "message": "How to use presets"
+  },
+  "popupHelpDialogDescription": {
+    "message": "Quick instructions for the main popup workflows."
+  },
+  "popupHelpCloseLabel": {
+    "message": "Close help"
+  },
+  "popupHelpSaveTitle": {
+    "message": "Save current filters"
+  },
+  "popupHelpSaveDescription": {
+    "message": "Open a Power BI report, set the filters you want, then click Save current filters. Review the captured filters and save them as a preset."
+  },
+  "popupHelpApplyTitle": {
+    "message": "Apply a preset"
+  },
+  "popupHelpApplyDescription": {
+    "message": "Select a saved preset and click Apply preset. The extension tries to set the report filters to the saved values and shows any missing filters or values in the log."
+  },
+  "popupHelpCopyTitle": {
+    "message": "Copy JSON"
+  },
+  "popupHelpCopyDescription": {
+    "message": "Select a preset and click Copy preset JSON to copy a shareable preset document for backup or sharing."
+  },
+  "popupHelpAddTitle": {
+    "message": "Add a preset"
+  },
+  "popupHelpAddDescription": {
+    "message": "Click New preset to create a preset manually. You can update the JSON draft before saving."
+  },
+  "popupHelpPasteTitle": {
+    "message": "Paste JSON"
+  },
+  "popupHelpPasteDescription": {
+    "message": "In New preset, click Paste JSON to insert a copied preset document from the clipboard. The extension validates it before saving."
+  },
+  "popupSaveReviewTitle": {
+    "message": "Review filters before saving"
+  },
+  "popupSaveReviewDescription": {
+    "message": "Choose the active filters to include in this preset."
+  },
+  "popupPresetNameLabel": {
+    "message": "Preset name"
+  },
+  "popupReviewFiltersTitle": {
+    "message": "Filters to save"
+  },
+  "popupSelectAllFiltersLabel": {
+    "message": "Select all filters"
+  },
+  "popupClearAllFiltersLabel": {
+    "message": "Clear all filters"
+  },
+  "popupReviewEmpty": {
+    "message": "No selected filter values found. Select values in Power BI and try again."
+  },
+  "popupActionCancel": {
+    "message": "Cancel"
+  },
+  "popupActionSavePreset": {
+    "message": "Save preset"
+  },
+  "popupCreateDialogTitle": {
+    "message": "New preset"
+  },
+  "popupCreateDialogDescription": {
+    "message": "Create a preset manually or paste shared preset JSON."
+  },
+  "popupCreateJsonTitle": {
+    "message": "Preset JSON"
+  },
+  "popupCreateJsonHint": {
+    "message": "Paste shared JSON or add at least one filter."
+  },
+  "popupActionPasteJson": {
+    "message": "Paste JSON"
+  },
+  "popupActionFormat": {
+    "message": "Format"
+  },
+  "popupActionReset": {
+    "message": "Reset"
+  },
+  "popupActionCreatePreset": {
+    "message": "Create preset"
+  },
+  "popupEditDialogTitle": {
+    "message": "Edit preset"
+  },
+  "popupEditDialogDescription": {
+    "message": "Rename the preset or edit its saved filters."
+  },
+  "popupEditJsonHint": {
+    "message": "Only preset.filters can be edited here."
+  },
+  "popupEditPresetJsonLabel": {
+    "message": "Preset JSON"
+  },
+  "popupActionSaveChanges": {
+    "message": "Save changes"
+  },
+  "popupResetCreateDialogTitle": {
+    "message": "Discard JSON changes?"
+  },
+  "popupResetCreateDialogDescription": {
+    "message": "Resetting will restore the initial create template, clear the preset name, and discard unsaved JSON changes."
+  },
+  "popupResetEditDialogTitle": {
+    "message": "Discard JSON changes?"
+  },
+  "popupResetEditDialogDescription": {
+    "message": "Resetting will restore the JSON from when you opened the editor and keep the current preset name."
+  },
+  "popupDeleteDialogTitle": {
+    "message": "Delete preset?"
+  },
+  "popupDeleteDialogDescription": {
+    "message": "Delete $1? This permanently removes the preset."
+  },
+  "popupDeleteDialogConfirm": {
+    "message": "Delete"
+  },
+  "popupActionFailed": {
+    "message": "Popup action failed."
+  },
+  "popupActionFailedWithDetail": {
+    "message": "Popup action failed: $1"
+  },
+  "popupSelectPresetFirst": {
+    "message": "Select a preset first."
+  },
+  "popupPresetDeleted": {
+    "message": "Preset deleted."
+  },
+  "popupSavedFilterCountSingular": {
+    "message": "Saved $1 filter."
+  },
+  "popupSavedFilterCountPlural": {
+    "message": "Saved $1 filters."
+  },
+  "popupPresetCreated": {
+    "message": "Preset created."
+  },
+  "popupPresetUpdated": {
+    "message": "Preset updated."
+  },
+  "popupReadingFilters": {
+    "message": "Reading filters..."
+  },
+  "popupReadFiltersFailedWithDetail": {
+    "message": "Couldn't read filters: $1"
+  },
+  "popupNoFiltersReturned": {
+    "message": "No filters returned."
+  },
+  "popupApplyingPreset": {
+    "message": "Applying preset..."
+  },
+  "popupApplyPresetFailedWithDetail": {
+    "message": "Couldn't apply preset: $1"
+  },
+  "popupNoResultsReturned": {
+    "message": "No results returned."
+  },
+  "popupPresetJsonCopied": {
+    "message": "Preset JSON copied."
+  },
+  "popupPopupLoadFailedWithDetail": {
+    "message": "Couldn't load the popup: $1"
+  },
+  "popupClipboardUnavailable": {
+    "message": "Clipboard access is unavailable."
+  },
+  "popupSiteAccessReminderSaveFailed": {
+    "message": "Couldn't save the site-access reminder preference: $1 The reminder may appear again."
+  },
+  "pageStatusWithPresetCountSingular": {
+    "message": "$1 preset for this URL"
+  },
+  "pageStatusWithPresetCountPlural": {
+    "message": "$1 presets for this URL"
+  },
+  "saveReviewSelectionCountSingular": {
+    "message": "$1 of $2 filter selected"
+  },
+  "saveReviewSelectionCountPlural": {
+    "message": "$1 of $2 filters selected"
+  },
+  "saveReviewSelectionGuidanceRequired": {
+    "message": "Select at least one filter."
+  },
+  "saveReviewDefaultName": {
+    "message": "Preset $1"
+  },
+  "saveReviewFilterIncludeLabel": {
+    "message": "Include $1"
+  },
+  "saveReviewFilterShowValuesLabel": {
+    "message": "Show values for $1"
+  },
+  "saveReviewFilterHideValuesLabel": {
+    "message": "Hide values for $1"
+  },
+  "saveReviewFilterSelectedValueCountSingular": {
+    "message": "$1 selected value"
+  },
+  "saveReviewFilterSelectedValueCountPlural": {
+    "message": "$1 selected values"
+  },
+  "jsonValidationValid": {
+    "message": "JSON is valid."
+  },
+  "createDialogClipboardDenied": {
+    "message": "Clipboard access was denied."
+  },
+  "createDialogClipboardReadFailed": {
+    "message": "Clipboard could not be read."
+  },
+  "createDialogClipboardEmpty": {
+    "message": "Clipboard does not contain preset JSON."
+  },
+  "resultSummaryNoneFound": {
+    "message": "No supported list filters found."
+  },
+  "resultSummaryAppliedSingular": {
+    "message": "Applied $1 filter."
+  },
+  "resultSummaryAppliedPlural": {
+    "message": "Applied $1 filters."
+  },
+  "resultSummaryNeedsAttentionSingular": {
+    "message": "$1 filter needs attention."
+  },
+  "resultSummaryNeedsAttentionPlural": {
+    "message": "$1 filters need attention."
+  },
+  "resultLogLineTemplate": {
+    "message": "$1: $2"
+  }
+}

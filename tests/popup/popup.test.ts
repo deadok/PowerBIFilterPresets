@@ -51,7 +51,10 @@ function collection() {
   };
 }
 
-async function mountPopup(presets: Preset[] = [preset("one", "Sales review")]): Promise<void> {
+async function mountPopup(
+  presets: Preset[] = [preset("one", "Sales review")],
+  localizedMessages?: Record<string, string>
+): Promise<void> {
   testState.presets = [...presets];
   testState.getPageCollection.mockImplementation(async () => collection());
   testState.savePreset.mockImplementation(async (_key: string, nextPreset: Preset) => {
@@ -66,10 +69,108 @@ async function mountPopup(presets: Preset[] = [preset("one", "Sales review")]): 
   testState.sendContentRequestToActiveTab.mockResolvedValue({ ok: true, filters: [] });
 
   document.body.innerHTML = '<div id="app"></div>';
+  if (localizedMessages) {
+    const { installTestMessages } = await import("../../src/shared/i18n/messages");
+    const mergedMessages = localizedMessages;
+    installTestMessages(mergedMessages);
+  }
   await import("../../src/popup/popup");
+  const expectedPageStatus =
+    (localizedMessages?.pageStatusWithPresetCountSingular ?? localizedMessages?.pageStatusWithPresetCountPlural)?.replace(
+      "$1",
+      String(presets.length)
+    ) ??
+    `${presets.length} preset${presets.length === 1 ? "" : "s"} for this URL`;
   await vi.waitFor(() => {
-    expect(document.querySelector("#page-status")?.textContent).toBe(`${presets.length} presets for this URL`);
+    expect(document.querySelector("#page-status")?.textContent).toBe(expectedPageStatus);
   });
+}
+
+function popupLocalizationCatalog(overrides: Record<string, string> = {}): Record<string, string> {
+  return {
+    popupTitle: "Localized presets",
+    popupLoadingCurrentPage: "Localized loading",
+    popupHelpButtonLabel: "Localized help",
+    popupSaveCurrentFilters: "Save translated filters",
+    popupCreatePresetLabel: "Translated new preset",
+    popupSelectedPresetLabel: "Chosen preset",
+    popupApplyPreset: "Run preset",
+    popupExportPresetLabel: "Export translated JSON",
+    popupEditPresetLabel: "Rename translated preset",
+    popupDeletePresetLabel: "Remove translated preset",
+    popupSiteAccessRecommendationTitle: "Localized privacy title",
+    popupSiteAccessRecommendationDescription: "Localized privacy body telling you to limit site access.",
+    popupSiteAccessRecommendationFollowUp: "Localized privacy follow-up describing where to change the setting.",
+    popupSiteAccessRecommendationDismiss: "Understood",
+    popupHelpDialogTitle: "Localized help title",
+    popupHelpDialogDescription: "Localized help summary",
+    popupHelpCloseLabel: "Dismiss localized help",
+    popupHelpSaveTitle: "Localized save title",
+    popupHelpSaveDescription: "Localized save instructions.",
+    popupHelpApplyTitle: "Localized apply title",
+    popupHelpApplyDescription: "Localized apply instructions.",
+    popupHelpCopyTitle: "Localized copy title",
+    popupHelpCopyDescription: "Localized copy instructions.",
+    popupHelpAddTitle: "Localized add title",
+    popupHelpAddDescription: "Localized add instructions.",
+    popupHelpPasteTitle: "Localized paste title",
+    popupHelpPasteDescription: "Localized paste instructions.",
+    popupSaveReviewTitle: "Localized save review title",
+    popupSaveReviewDescription: "Localized save review summary.",
+    popupPresetNameLabel: "Localized preset name",
+    popupReviewFiltersTitle: "Localized filters title",
+    popupSelectAllFiltersLabel: "Localized select all",
+    popupClearAllFiltersLabel: "Localized clear all",
+    popupReviewEmpty: "Localized empty review state.",
+    popupActionCancel: "Localized cancel",
+    popupActionSavePreset: "Localized save preset",
+    popupCreateDialogTitle: "Translated create dialog",
+    popupCreateDialogDescription: "Localized create dialog summary.",
+    popupCreateJsonTitle: "Localized preset JSON title",
+    popupCreateJsonHint: "Localized create JSON hint.",
+    popupActionPasteJson: "Localized paste JSON",
+    popupActionFormat: "Localized format",
+    popupActionReset: "Localized reset",
+    popupActionCreatePreset: "Localized create preset",
+    popupEditDialogTitle: "Localized edit dialog title",
+    popupEditDialogDescription: "Localized edit dialog summary.",
+    popupEditJsonHint: "Localized edit JSON hint.",
+    popupEditPresetJsonLabel: "Localized preset JSON label",
+    popupActionSaveChanges: "Localized save changes",
+    popupResetCreateDialogTitle: "Localized discard create title",
+    popupResetCreateDialogDescription: "Localized discard create summary.",
+    popupResetEditDialogTitle: "Localized discard edit title",
+    popupResetEditDialogDescription: "Localized discard edit summary.",
+    popupDeleteDialogTitle: "Translated delete dialog",
+    popupDeleteDialogDescription: "Localized delete $1? This permanently removes the preset.",
+    popupDeleteDialogConfirm: "Remove",
+    popupActionFailed: "Localized popup action failed.",
+    popupSelectPresetFirst: "Localized select a preset first.",
+    popupPresetDeleted: "Localized preset deleted.",
+    popupSavedFilterCountSingular: "Localized saved $1 filter.",
+    popupSavedFilterCountPlural: "Localized saved $1 filters.",
+    popupPresetCreated: "Localized preset created.",
+    popupPresetUpdated: "Localized preset updated.",
+    popupReadingFilters: "Localized reading filters...",
+    popupNoFiltersReturned: "Localized no filters returned.",
+    popupApplyingPreset: "Localized applying preset...",
+    popupNoResultsReturned: "Localized no results returned.",
+    popupPresetJsonCopied: "Localized preset JSON copied.",
+    popupClipboardUnavailable: "Localized clipboard access is unavailable.",
+    popupActionFailedWithDetail: "Localized action failure wrapper: $1",
+    popupReadFiltersFailedWithDetail: "Localized read failure wrapper: $1",
+    popupApplyPresetFailedWithDetail: "Localized apply failure wrapper: $1",
+    popupPopupLoadFailedWithDetail: "Localized popup load failure wrapper: $1",
+    popupSiteAccessReminderSaveFailed: "Localized reminder save failed: $1. Localized reminder may reappear.",
+    pageStatusWithPresetCountSingular: "Localized count: $1",
+    pageStatusWithPresetCountPlural: "Localized count: $1",
+    resultSummaryAppliedSingular: "Localized summary applied exactly $1 filter.",
+    resultSummaryAppliedPlural: "Localized summary applied exactly $1 filters.",
+    resultSummaryNeedsAttentionSingular: "Localized summary attention on $1 filter.",
+    resultSummaryNeedsAttentionPlural: "Localized summary attention on $1 filters.",
+    resultLogLineTemplate: "Localized line [$1] => $2",
+    ...overrides
+  };
 }
 
 function click(element: Element): void {
@@ -241,6 +342,136 @@ describe("popup", () => {
     expect(logo?.getAttribute("src")).toBe("/assets/brand/logo.png");
     expect(logo?.getAttribute("alt")).toBe("");
     expect(logo?.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("localizes popup shell and static dialog copy at runtime", async () => {
+    await mountPopup([preset("one", "Sales review")], popupLocalizationCatalog());
+
+    expect(document.querySelector(".popup-heading h1")?.textContent).toBe("Localized presets");
+    expect(document.querySelector("#page-status")?.textContent).toBe("Localized count: 1");
+    expect(document.querySelector("#show-help")).toMatchObject({
+      ariaLabel: "Localized help",
+      title: "Localized help"
+    });
+    expect(document.querySelector("#save-current span")?.textContent).toBe("Save translated filters");
+    expect(document.querySelector("#create-preset")).toMatchObject({
+      ariaLabel: "Translated new preset",
+      title: "Translated new preset"
+    });
+    expect(document.querySelector('label[for="preset-select"]')?.textContent).toBe("Chosen preset");
+    expect(document.querySelector("#apply-preset span")?.textContent).toBe("Run preset");
+    expect(document.querySelector("#export-preset")).toMatchObject({
+      ariaLabel: "Export translated JSON",
+      title: "Export translated JSON"
+    });
+    expect(document.querySelector("#rename-preset")).toMatchObject({
+      ariaLabel: "Rename translated preset",
+      title: "Rename translated preset"
+    });
+    expect(document.querySelector("#delete-preset")).toMatchObject({
+      ariaLabel: "Remove translated preset",
+      title: "Remove translated preset"
+    });
+    expect(document.querySelector("#site-access-recommendation-title")?.textContent).toBe("Localized privacy title");
+    expect(document.querySelector("#site-access-recommendation-description")?.textContent).toBe(
+      "Localized privacy body telling you to limit site access."
+    );
+    expect(document.querySelector("#site-access-recommendation-follow-up")?.textContent).toBe(
+      "Localized privacy follow-up describing where to change the setting."
+    );
+    expect(document.querySelector("#dismiss-site-access-recommendation")?.textContent).toBe("Understood");
+    expect(document.querySelector("#help-dialog-title")?.textContent).toBe("Localized help title");
+    expect(document.querySelector("#help-dialog-description")?.textContent).toBe("Localized help summary");
+    expect(document.querySelector("#create-preset-title")?.textContent).toBe("Translated create dialog");
+    expect(document.querySelector("#delete-dialog-title")?.textContent).toBe("Translated delete dialog");
+    click(deleteButton());
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>(".delete-dialog")?.hidden).toBe(false);
+    });
+    expect(document.querySelector("#delete-dialog-description")?.textContent).toBe(
+      "Localized delete “Sales review”? This permanently removes the preset."
+    );
+    expect(document.querySelector("#confirm-delete span")?.textContent).toBe("Remove");
+  });
+
+  it("localizes popup runtime status and result messages", async () => {
+    await mountPopup([preset("one", "Sales review")], popupLocalizationCatalog());
+
+    click(document.querySelector("#export-preset") as Element);
+    await vi.waitFor(() => {
+      expect(resultLineText()).toEqual(["Localized preset JSON copied."]);
+    });
+
+    let resolveApplyResponse: ((value: ApplyFiltersResponse) => void) | undefined;
+    testState.sendContentRequestToActiveTab.mockImplementationOnce(
+      () =>
+        new Promise<ApplyFiltersResponse>((resolve) => {
+          resolveApplyResponse = resolve;
+        })
+    );
+    click(document.querySelector("#apply-preset") as Element);
+    await vi.waitFor(() => {
+      expect(resultLineText()[0]).toBe("Localized applying preset...");
+    });
+    resolveApplyResponse?.({
+      ok: true,
+      results: [applyResult("Region", "applied", "Applied 1 value.")]
+    });
+    await vi.waitFor(() => {
+      expect(resultLineText()).toEqual([
+        "Localized summary applied exactly 1 filter.",
+        "Localized line [Region] => Applied 1 value."
+      ]);
+    });
+
+    testState.sendContentRequestToActiveTab.mockResolvedValueOnce({
+      ok: false,
+      error: "Lower-level capture failure."
+    });
+    click(document.querySelector("#save-current") as Element);
+    await vi.waitFor(() => {
+      expect(resultLineText()).toEqual(["Localized read failure wrapper: Lower-level capture failure."]);
+    });
+
+    testState.sendContentRequestToActiveTab.mockResolvedValueOnce({
+      ok: false,
+      error: ""
+    });
+    click(document.querySelector("#save-current") as Element);
+    await vi.waitFor(() => {
+      expect(resultLineText()).toEqual(["Localized popup action failed."]);
+    });
+
+    testState.sendContentRequestToActiveTab.mockResolvedValueOnce({
+      ok: false,
+      error: "Lower-level apply failure."
+    });
+    click(document.querySelector("#apply-preset") as Element);
+    await vi.waitFor(() => {
+      expect(resultLineText()).toEqual(["Localized apply failure wrapper: Lower-level apply failure."]);
+    });
+
+    const select = document.querySelector<HTMLSelectElement>("#preset-select");
+    if (!select) {
+      throw new Error("Preset selector not found.");
+    }
+    select.selectedIndex = -1;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+
+    click(editButton());
+    await vi.waitFor(() => {
+      expect(resultLineText()).toEqual(["Localized select a preset first."]);
+    });
+
+    selectPreset("one");
+    click(deleteButton());
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>(".delete-dialog")?.hidden).toBe(false);
+    });
+    click(confirmDeleteButton());
+    await vi.waitFor(() => {
+      expect(resultLineText()).toEqual(["Localized preset deleted."]);
+    });
   });
 
   it("keeps the help trigger in the header and leaves the top action row with Save and New preset only", async () => {
@@ -1155,7 +1386,7 @@ describe("popup", () => {
     click(document.querySelector("#save-current") as Element);
 
     await vi.waitFor(() => {
-      expect(document.querySelector("#result")?.textContent).toBe("Capture failed.");
+      expect(document.querySelector("#result")?.textContent).toBe("Couldn't read filters: Capture failed.");
     });
     expect(document.querySelector<HTMLElement>("#save-review-dialog")?.hidden).toBe(true);
     expect(document.querySelector<HTMLElement>(".popup-content")?.hasAttribute("inert")).toBe(false);
@@ -1326,7 +1557,7 @@ describe("popup", () => {
         "00000000-0000-0000-0000-000000000000"
       );
       expect(document.querySelector<HTMLElement>("#save-review-dialog")?.hidden).toBe(true);
-      expect(document.querySelector("#result")?.textContent).toBe("Saved 1 filters.");
+      expect(document.querySelector("#result")?.textContent).toBe("Saved 1 filter.");
     });
     expect(document.activeElement).toBe(document.querySelector("#apply-preset"));
   });
@@ -1543,9 +1774,9 @@ describe("popup", () => {
     click(document.querySelector("#save-current") as Element);
 
     await vi.waitFor(() => {
-      expect(document.querySelector("#result")?.textContent).toBe("Capture failed.");
+      expect(document.querySelector("#result")?.textContent).toBe("Couldn't read filters: Capture failed.");
     });
-    expect(resultLineText()).toEqual(["Capture failed."]);
+    expect(resultLineText()).toEqual(["Couldn't read filters: Capture failed."]);
     expect(resultLineSeverities()).toEqual(["error"]);
     expect(document.querySelector("#result")?.getAttribute("aria-live")).toBe("polite");
   });
