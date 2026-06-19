@@ -14,7 +14,7 @@ export function createDeterministicPowerBiTiming(initialNow = 0): PowerBiTiming 
   return {
     now: () => now,
     async delay(ms: number) {
-      now += ms;
+      now += Math.max(1, ms);
       await Promise.resolve();
     }
   };
