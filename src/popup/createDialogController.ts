@@ -15,6 +15,7 @@ import {
   validateCreatePresetJson,
   type CreatePresetJsonResult
 } from "../shared/presetJsonEditor";
+import { getMessage } from "../shared/i18n/messages";
 import type { PagePresetCollection, Preset } from "../shared/types";
 
 type CreateDialogName = "create" | "createReset";
@@ -70,12 +71,12 @@ function setMessage(element: HTMLElement, message: string): void {
 function clipboardReadErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     if (error.name === "NotAllowedError") {
-      return "Clipboard access was denied.";
+      return getMessage("createDialogClipboardDenied");
     }
-    return error.message || "Clipboard could not be read.";
+    return error.message || getMessage("createDialogClipboardReadFailed");
   }
 
-  return "Clipboard could not be read.";
+  return getMessage("createDialogClipboardReadFailed");
 }
 
 function isPresetNameConflict(error: unknown): boolean {
@@ -126,7 +127,7 @@ export function createCreateDialogController(options: CreateDialogControllerOpti
     }
 
     if (validation.valid) {
-      renderValidationMessage("JSON is valid.", false);
+      renderValidationMessage(getMessage("jsonValidationValid"), false);
       setMessage(elements.saveError, "");
     } else {
       renderValidationMessage(validation.error.message, true);
@@ -420,7 +421,7 @@ export function createCreateDialogController(options: CreateDialogControllerOpti
           return;
         }
         if (text.length === 0) {
-          renderValidationMessage("Clipboard does not contain preset JSON.", true);
+          renderValidationMessage(getMessage("createDialogClipboardEmpty"), true);
           return;
         }
 

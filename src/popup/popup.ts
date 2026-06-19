@@ -8,6 +8,8 @@ import { getPopupElements } from "./popupElements";
 import { createPopupDialogState } from "./popupDialogState";
 import { createApplyResultLines, createResultLine, renderResult } from "./resultLog";
 import { createSaveReviewDialogController } from "./saveReviewDialogController";
+import { formatPageStatus, formatSavedFilterCount } from "../shared/i18n/format";
+import { getMessage, type MessageKey } from "../shared/i18n/messages";
 import { serializePresetExport } from "../shared/presetExport";
 import { createPresetStore, type PresetStore } from "../shared/presetStore";
 import type { PagePresetCollection, Preset, SendContentRequest } from "../shared/types";
@@ -39,8 +41,23 @@ type ActiveDialog =
 
 const siteAccessRecommendationKey = "popup.siteAccessRecommendation.v1.dismissed";
 
+function errorDetail(error: unknown): string | undefined {
+  if (typeof error === "string" && error.trim() !== "") {
+    return error;
+  }
+
+  if (error instanceof Error && error.message.trim() !== "") {
+    return error.message;
+  }
+}
+
+function formatPopupError(messageKey: MessageKey, error: unknown): string {
+  const detail = errorDetail(error);
+  return detail ? getMessage(messageKey, [detail]) : getMessage("popupActionFailed");
+}
+
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Popup action failed.";
+  return errorDetail(error) ?? getMessage("popupActionFailed");
 }
 
 async function hasDismissedSiteAccessRecommendation(
@@ -56,12 +73,39 @@ async function dismissSiteAccessRecommendation(storage: PopupDependencies["uiSto
 
 function runPopupAction(element: HTMLOutputElement, action: () => Promise<void>): void {
   void action().catch((error: unknown) => {
-    renderResult(element, createResultLine(errorMessage(error), "error"));
+    renderResult(element, createResultLine(formatPopupError("popupActionFailedWithDetail", error), "error"));
   });
+}
+
+function localizePopupMarkup(root: ParentNode): void {
+  for (const element of Array.from(root.querySelectorAll<HTMLElement>("[data-i18n]"))) {
+    const key = element.getAttribute("data-i18n");
+    if (!key) {
+      continue;
+    }
+    element.textContent = getMessage(key as MessageKey);
+  }
+
+  const localizedAttributes = [
+    ["aria-label", "data-i18n-aria-label"],
+    ["title", "data-i18n-title"],
+    ["data-tooltip", "data-i18n-data-tooltip"]
+  ] as const;
+
+  for (const [attributeName, keyAttribute] of localizedAttributes) {
+    for (const element of Array.from(root.querySelectorAll<HTMLElement>(`[${keyAttribute}]`))) {
+      const key = element.getAttribute(keyAttribute);
+      if (!key) {
+        continue;
+      }
+      element.setAttribute(attributeName, getMessage(key as MessageKey));
+    }
+  }
 }
 
 export async function mountPopup(app: HTMLDivElement, dependencies: PopupDependencies): Promise<void> {
   app.innerHTML = popupMarkup;
+  localizePopupMarkup(app);
 
   const {
     popupContent,
@@ -121,7 +165,7 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     cancelEditResetButton,
     confirmEditResetButton,
     deleteDialog,
-    deletePresetName,
+    deleteDescription,
     deleteError,
     cancelDeleteButton,
     confirmDeleteButton,
@@ -180,7 +224,7 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
       presetSelect.value = preferredSelectionId;
     }
 
-    pageStatus.textContent = `${currentPresets.length} presets for this URL`;
+    pageStatus.textContent = formatPageStatus(currentPresets.length);
     presetSelect.disabled = currentPresets.length === 0;
     updateSelectedActionStates();
   }
@@ -272,13 +316,7 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
       closeSiteAccessRecommendation(true);
     } catch (error: unknown) {
       closeSiteAccessRecommendation(true);
-      renderResult(
-        result,
-        createResultLine(
-          `Couldn't save the site-access reminder preference: ${errorMessage(error)} The reminder may appear again.`,
-          "error"
-        )
-      );
+      renderResult(result, createResultLine(getMessage("popupSiteAccessReminderSaveFailed", [errorMessage(error)]), "error"));
     } finally {
       setSiteAccessRecommendationBusy(false);
     }
@@ -301,7 +339,7 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
       presetSelect,
       saveButton,
       dialog: deleteDialog,
-      presetName: deletePresetName,
+      description: deleteDescription,
       error: deleteError,
       cancelButton: cancelDeleteButton,
       confirmButton: confirmDeleteButton
@@ -312,13 +350,14 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     openDialog: () => openDialog("delete"),
     closeDialog: () => closeDialog("delete"),
     renderMissingSelection: () => {
-      renderResult(result, createResultLine("Select a preset first.", "error"));
+      renderResult(result, createResultLine(getMessage("popupSelectPresetFirst"), "error"));
     },
     updateSelectedActionStates,
+    renderDescription: (presetName) => getMessage("popupDeleteDialogDescription", [presetName]),
     deletePreset: (presetId) => dependencies.store.deletePreset(pageKey, presetId),
     renderCollection,
     renderDeleted: () => {
-      renderResult(result, createResultLine("Preset deleted.", "normal"));
+      renderResult(result, createResultLine(getMessage("popupPresetDeleted"), "normal"));
     },
     errorMessage
   });
@@ -348,7 +387,7 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     closeDialog: () => closeDialog("save"),
     renderCollection,
     renderSaved: (filterCount) => {
-      renderResult(result, createResultLine(`Saved ${filterCount} filters.`, "normal"));
+      renderResult(result, createResultLine(formatSavedFilterCount(filterCount), "normal"));
     },
     errorMessage
   });
@@ -383,7 +422,7 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     closeDialog: (dialog) => closeDialog(dialog),
     renderCollection,
     renderCreated: () => {
-      renderResult(result, createResultLine("Preset created.", "normal"));
+      renderResult(result, createResultLine(getMessage("popupPresetCreated"), "normal"));
     },
     errorMessage
   });
@@ -413,7 +452,7 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     closeDialog: (dialog) => closeDialog(dialog),
     renderCollection,
     renderUpdated: () => {
-      renderResult(result, createResultLine("Preset updated.", "normal"));
+      renderResult(result, createResultLine(getMessage("popupPresetUpdated"), "normal"));
     },
     errorMessage
   });
@@ -437,19 +476,25 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
       return;
     }
     setCaptureBusy(true);
-    renderResult(result, createResultLine("Reading filters...", "normal"));
+    renderResult(result, createResultLine(getMessage("popupReadingFilters"), "normal"));
 
     void dependencies
       .sendContentRequest({ type: "READ_FILTERS" })
       .then((response) => {
         if (!response.ok || !("filters" in response)) {
-          renderResult(result, createResultLine(response.ok ? "No filters returned." : response.error, "error"));
+          renderResult(
+            result,
+            createResultLine(
+              response.ok ? getMessage("popupNoFiltersReturned") : formatPopupError("popupReadFiltersFailedWithDetail", response.error),
+              "error"
+            )
+          );
           return;
         }
         saveReviewDialogController.open(response.filters);
       })
       .catch((error: unknown) => {
-        renderResult(result, createResultLine(errorMessage(error), "error"));
+        renderResult(result, createResultLine(formatPopupError("popupReadFiltersFailedWithDetail", error), "error"));
       })
       .finally(() => {
         setCaptureBusy(false);
@@ -460,16 +505,22 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     runPopupAction(result, async () => {
       const preset = await storedSelectedPreset();
       if (!preset) {
-        renderResult(result, createResultLine("Select a preset first.", "error"));
+        renderResult(result, createResultLine(getMessage("popupSelectPresetFirst"), "error"));
         updateSelectedActionStates();
         return;
       }
 
-      renderResult(result, createResultLine("Applying preset...", "normal"));
+      renderResult(result, createResultLine(getMessage("popupApplyingPreset"), "normal"));
       const response = await dependencies.sendContentRequest({ type: "APPLY_FILTERS", filters: preset.filters });
 
       if (!response.ok || !("results" in response)) {
-        renderResult(result, createResultLine(response.ok ? "No results returned." : response.error, "error"));
+        renderResult(
+          result,
+          createResultLine(
+            response.ok ? getMessage("popupNoResultsReturned") : formatPopupError("popupApplyPresetFailedWithDetail", response.error),
+            "error"
+          )
+        );
         return;
       }
 
@@ -481,13 +532,13 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
     runPopupAction(result, async () => {
       const preset = await storedSelectedPreset();
       if (!preset) {
-        renderResult(result, createResultLine("Select a preset first.", "error"));
+        renderResult(result, createResultLine(getMessage("popupSelectPresetFirst"), "error"));
         updateSelectedActionStates();
         return;
       }
 
       await dependencies.writeClipboard(serializePresetExport(preset));
-      renderResult(result, createResultLine("Preset JSON copied.", "normal"));
+      renderResult(result, createResultLine(getMessage("popupPresetJsonCopied"), "normal"));
     });
   });
 
@@ -508,7 +559,7 @@ export async function mountPopup(app: HTMLDivElement, dependencies: PopupDepende
       const selectedId = presetSelect.value;
       const preset = await storedSelectedPreset();
       if (!preset || preset.id !== selectedId || presetSelect.value !== selectedId) {
-        renderResult(result, createResultLine("Select a preset first.", "error"));
+        renderResult(result, createResultLine(getMessage("popupSelectPresetFirst"), "error"));
         updateSelectedActionStates();
         return;
       }
@@ -596,7 +647,7 @@ if (app) {
     sendContentRequest: sendContentRequestToActiveTab,
     readClipboardText: () => {
       if (!navigator.clipboard?.readText) {
-        return Promise.reject(new Error("Clipboard access is unavailable."));
+        return Promise.reject(new Error(getMessage("popupClipboardUnavailable")));
       }
       return navigator.clipboard.readText();
     },
@@ -606,6 +657,6 @@ if (app) {
   };
 
   mountPopup(app, dependencies).catch((error: unknown) => {
-    app.textContent = errorMessage(error);
+    app.textContent = formatPopupError("popupPopupLoadFailedWithDetail", error);
   });
 }

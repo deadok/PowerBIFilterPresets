@@ -3,10 +3,18 @@
     <header class="popup-header">
       <img class="popup-logo" src="/assets/brand/logo.png" alt="" aria-hidden="true" />
       <div class="popup-heading">
-        <h1>Power BI Presets</h1>
-        <p id="page-status">Loading current page...</p>
+        <h1 data-i18n="popupTitle">Power BI Presets</h1>
+        <p id="page-status" data-i18n="popupLoadingCurrentPage">Loading current page...</p>
       </div>
-      <button id="show-help" class="header-help-trigger" type="button" aria-label="Show help" title="Show help">
+      <button
+        id="show-help"
+        class="header-help-trigger"
+        type="button"
+        aria-label="Show help"
+        title="Show help"
+        data-i18n-aria-label="popupHelpButtonLabel"
+        data-i18n-title="popupHelpButtonLabel"
+      >
         <span class="help-button-glyph" aria-hidden="true">ℹ️</span>
       </button>
     </header>
@@ -17,7 +25,7 @@
           <path d="M5 3h12l2 2v16H5z"></path>
           <path d="M8 3v6h8V3M8 21v-8h8v8"></path>
         </svg>
-        <span>Save current filters</span>
+        <span data-i18n="popupSaveCurrentFilters">Save current filters</span>
       </button>
 
       <button
@@ -27,6 +35,9 @@
         aria-label="New preset"
         title="New preset"
         data-tooltip="New preset"
+        data-i18n-aria-label="popupCreatePresetLabel"
+        data-i18n-title="popupCreatePresetLabel"
+        data-i18n-data-tooltip="popupCreatePresetLabel"
       >
         <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
           <path d="M12 5v14M5 12h14"></path>
@@ -37,7 +48,7 @@
     <hr class="popup-separator" aria-hidden="true" />
 
     <div class="selected-preset">
-      <label for="preset-select">Selected preset</label>
+      <label for="preset-select" data-i18n="popupSelectedPresetLabel">Selected preset</label>
       <select id="preset-select"></select>
 
       <button id="apply-preset" class="button-primary button-with-icon" type="button">
@@ -45,7 +56,7 @@
           <circle cx="12" cy="12" r="9"></circle>
           <path d="m8 12 2.5 2.5L16 9"></path>
         </svg>
-        <span>Apply preset</span>
+        <span data-i18n="popupApplyPreset">Apply preset</span>
       </button>
 
       <div class="preset-actions">
@@ -56,6 +67,9 @@
           aria-label="Copy preset JSON"
           title="Copy preset JSON"
           data-tooltip="Copy preset JSON"
+          data-i18n-aria-label="popupExportPresetLabel"
+          data-i18n-title="popupExportPresetLabel"
+          data-i18n-data-tooltip="popupExportPresetLabel"
         >
           <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
             <rect x="8" y="8" width="11" height="11" rx="2"></rect>
@@ -69,6 +83,9 @@
           aria-label="Edit preset"
           title="Edit preset"
           data-tooltip="Edit preset"
+          data-i18n-aria-label="popupEditPresetLabel"
+          data-i18n-title="popupEditPresetLabel"
+          data-i18n-data-tooltip="popupEditPresetLabel"
         >
           <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
             <path d="m4 16-.8 4.8L8 20l10.5-10.5-4-4z"></path>
@@ -82,6 +99,9 @@
           aria-label="Delete preset"
           title="Delete preset"
           data-tooltip="Delete preset"
+          data-i18n-aria-label="popupDeletePresetLabel"
+          data-i18n-title="popupDeletePresetLabel"
+          data-i18n-data-tooltip="popupDeletePresetLabel"
         >
           <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
             <path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"></path>
@@ -105,16 +125,25 @@
       hidden
     >
       <header class="dialog-header">
-        <h2 id="site-access-recommendation-title">Limit site access for better privacy</h2>
-        <p id="site-access-recommendation-description">
+        <h2 id="site-access-recommendation-title" data-i18n="popupSiteAccessRecommendationTitle">
+          Limit site access for better privacy
+        </h2>
+        <p id="site-access-recommendation-description" data-i18n="popupSiteAccessRecommendationDescription">
           For better privacy, consider limiting this extension's site access in Chrome to only your Power BI domains instead of allowing all sites.
         </p>
       </header>
-      <p id="site-access-recommendation-follow-up">
+      <p id="site-access-recommendation-follow-up" data-i18n="popupSiteAccessRecommendationFollowUp">
         Open Chrome's Extensions page, click Details on this extension, or right-click the extension icon and select Manage extension. Then set Site access to your specific Power BI report domains.
       </p>
       <div class="dialog-actions">
-        <button id="dismiss-site-access-recommendation" class="button-primary" type="button">Got it</button>
+        <button
+          id="dismiss-site-access-recommendation"
+          class="button-primary"
+          type="button"
+          data-i18n="popupSiteAccessRecommendationDismiss"
+        >
+          Got it
+        </button>
       </div>
     </section>
 
@@ -130,10 +159,18 @@
     >
       <header class="dialog-header help-dialog-header">
         <div>
-          <h2 id="help-dialog-title">How to use presets</h2>
-          <p id="help-dialog-description">Quick instructions for the main popup workflows.</p>
+          <h2 id="help-dialog-title" data-i18n="popupHelpDialogTitle">How to use presets</h2>
+          <p id="help-dialog-description" data-i18n="popupHelpDialogDescription">
+            Quick instructions for the main popup workflows.
+          </p>
         </div>
-        <button id="close-help" class="dialog-close-button" type="button" aria-label="Close help">
+        <button
+          id="close-help"
+          class="dialog-close-button"
+          type="button"
+          aria-label="Close help"
+          data-i18n-aria-label="popupHelpCloseLabel"
+        >
           <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
             <path d="M6 6l12 12M18 6 6 18"></path>
           </svg>
@@ -141,20 +178,30 @@
       </header>
 
       <div id="help-content" class="help-content">
-        <h3 id="help-save-title">Save current filters</h3>
-        <p>Open a Power BI report, set the filters you want, then click Save current filters. Review the captured filters and save them as a preset.</p>
+        <h3 id="help-save-title" data-i18n="popupHelpSaveTitle">Save current filters</h3>
+        <p data-i18n="popupHelpSaveDescription">
+          Open a Power BI report, set the filters you want, then click Save current filters. Review the captured filters and save them as a preset.
+        </p>
 
-        <h3 id="help-apply-title">Apply a preset</h3>
-        <p>Select a saved preset and click Apply preset. The extension tries to set the report filters to the saved values and shows any missing filters or values in the log.</p>
+        <h3 id="help-apply-title" data-i18n="popupHelpApplyTitle">Apply a preset</h3>
+        <p data-i18n="popupHelpApplyDescription">
+          Select a saved preset and click Apply preset. The extension tries to set the report filters to the saved values and shows any missing filters or values in the log.
+        </p>
 
-        <h3 id="help-copy-title">Copy JSON</h3>
-        <p>Select a preset and click Copy preset JSON to copy a shareable preset document for backup or sharing.</p>
+        <h3 id="help-copy-title" data-i18n="popupHelpCopyTitle">Copy JSON</h3>
+        <p data-i18n="popupHelpCopyDescription">
+          Select a preset and click Copy preset JSON to copy a shareable preset document for backup or sharing.
+        </p>
 
-        <h3 id="help-add-title">Add a preset</h3>
-        <p>Click New preset to create a preset manually. You can update the JSON draft before saving.</p>
+        <h3 id="help-add-title" data-i18n="popupHelpAddTitle">Add a preset</h3>
+        <p data-i18n="popupHelpAddDescription">
+          Click New preset to create a preset manually. You can update the JSON draft before saving.
+        </p>
 
-        <h3 id="help-paste-title">Paste JSON</h3>
-        <p>In New preset, click Paste JSON to insert a copied preset document from the clipboard. The extension validates it before saving.</p>
+        <h3 id="help-paste-title" data-i18n="popupHelpPasteTitle">Paste JSON</h3>
+        <p data-i18n="popupHelpPasteDescription">
+          In New preset, click Paste JSON to insert a copied preset document from the clipboard. The extension validates it before saving.
+        </p>
       </div>
     </section>
 
@@ -168,12 +215,12 @@
       hidden
     >
       <header class="dialog-header">
-        <h2 id="save-review-title">Review filters before saving</h2>
-        <p>Choose the active filters to include in this preset.</p>
+        <h2 id="save-review-title" data-i18n="popupSaveReviewTitle">Review filters before saving</h2>
+        <p data-i18n="popupSaveReviewDescription">Choose the active filters to include in this preset.</p>
       </header>
 
       <div class="dialog-field">
-        <label for="save-name">Preset name</label>
+        <label for="save-name" data-i18n="popupPresetNameLabel">Preset name</label>
         <input id="save-name" type="text" autocomplete="off" aria-describedby="save-name-error save-storage-error" />
         <p id="save-name-error" class="field-error" role="alert" hidden></p>
         <p id="save-storage-error" class="dialog-error" role="alert" hidden></p>
@@ -181,7 +228,7 @@
 
       <div class="review-toolbar">
         <div>
-          <h3 id="review-filters-title">Filters to save</h3>
+          <h3 id="review-filters-title" data-i18n="popupReviewFiltersTitle">Filters to save</h3>
           <p id="review-selection-count" role="status" aria-live="polite"></p>
         </div>
         <div class="review-bulk-actions">
@@ -192,6 +239,9 @@
             aria-label="Select all filters"
             title="Select all filters"
             data-tooltip="Select all filters"
+            data-i18n-aria-label="popupSelectAllFiltersLabel"
+            data-i18n-title="popupSelectAllFiltersLabel"
+            data-i18n-data-tooltip="popupSelectAllFiltersLabel"
           >
             <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
               <rect x="4" y="4" width="16" height="16" rx="2"></rect>
@@ -205,6 +255,9 @@
             aria-label="Clear all filters"
             title="Clear all filters"
             data-tooltip="Clear all filters"
+            data-i18n-aria-label="popupClearAllFiltersLabel"
+            data-i18n-title="popupClearAllFiltersLabel"
+            data-i18n-data-tooltip="popupClearAllFiltersLabel"
           >
             <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
               <rect x="4" y="4" width="16" height="16" rx="2"></rect>
@@ -219,15 +272,17 @@
         role="group"
         aria-labelledby="review-filters-title"
       ></div>
-      <p id="review-empty" class="review-empty" hidden>
+      <p id="review-empty" class="review-empty" hidden data-i18n="popupReviewEmpty">
         No selected filter values found. Select values in Power BI and try again.
       </p>
 
       <div class="review-footer">
         <p id="review-selection-guidance" role="status" aria-live="polite"></p>
         <div class="dialog-actions">
-          <button id="cancel-save" class="button-secondary" type="button">Cancel</button>
-          <button id="confirm-save" class="button-primary" type="button">Save preset</button>
+          <button id="cancel-save" class="button-secondary" type="button" data-i18n="popupActionCancel">Cancel</button>
+          <button id="confirm-save" class="button-primary" type="button" data-i18n="popupActionSavePreset">
+            Save preset
+          </button>
         </div>
       </div>
     </section>
@@ -242,11 +297,11 @@
       hidden
     >
       <header class="dialog-header">
-        <h2 id="create-preset-title">New preset</h2>
-        <p>Create a preset manually or paste shared preset JSON.</p>
+        <h2 id="create-preset-title" data-i18n="popupCreateDialogTitle">New preset</h2>
+        <p data-i18n="popupCreateDialogDescription">Create a preset manually or paste shared preset JSON.</p>
       </header>
       <div class="dialog-field">
-        <label for="create-preset-name">Preset name</label>
+        <label for="create-preset-name" data-i18n="popupPresetNameLabel">Preset name</label>
         <input
           id="create-preset-name"
           type="text"
@@ -258,15 +313,34 @@
 
       <div class="edit-json-toolbar">
         <div>
-          <h3 id="create-preset-json-title">Preset JSON</h3>
-          <p class="edit-json-hint">Paste shared JSON or add at least one filter.</p>
+          <h3 id="create-preset-json-title" data-i18n="popupCreateJsonTitle">Preset JSON</h3>
+          <p class="edit-json-hint" data-i18n="popupCreateJsonHint">Paste shared JSON or add at least one filter.</p>
         </div>
         <div class="edit-json-actions">
-          <button id="paste-create-preset-json" class="button-secondary edit-json-action" type="button">
+          <button
+            id="paste-create-preset-json"
+            class="button-secondary edit-json-action"
+            type="button"
+            data-i18n="popupActionPasteJson"
+          >
             Paste JSON
           </button>
-          <button id="format-create-preset-json" class="button-secondary edit-json-action" type="button">Format</button>
-          <button id="reset-create-preset-json" class="button-secondary edit-json-action" type="button">Reset</button>
+          <button
+            id="format-create-preset-json"
+            class="button-secondary edit-json-action"
+            type="button"
+            data-i18n="popupActionFormat"
+          >
+            Format
+          </button>
+          <button
+            id="reset-create-preset-json"
+            class="button-secondary edit-json-action"
+            type="button"
+            data-i18n="popupActionReset"
+          >
+            Reset
+          </button>
         </div>
       </div>
 
@@ -286,8 +360,22 @@
       <p id="create-preset-save-error" class="dialog-error" role="alert" hidden></p>
 
       <div class="dialog-actions edit-preset-footer">
-        <button id="cancel-create-preset" class="button-secondary" type="button">Cancel</button>
-        <button id="confirm-create-preset" class="button-primary" type="button">Create preset</button>
+        <button
+          id="cancel-create-preset"
+          class="button-secondary"
+          type="button"
+          data-i18n="popupActionCancel"
+        >
+          Cancel
+        </button>
+        <button
+          id="confirm-create-preset"
+          class="button-primary"
+          type="button"
+          data-i18n="popupActionCreatePreset"
+        >
+          Create preset
+        </button>
       </div>
     </section>
 
@@ -301,8 +389,8 @@
       hidden
     >
       <header class="dialog-header">
-        <h2 id="edit-preset-title">Edit preset</h2>
-        <p>Rename the preset or edit its saved filters.</p>
+        <h2 id="edit-preset-title" data-i18n="popupEditDialogTitle">Edit preset</h2>
+        <p data-i18n="popupEditDialogDescription">Rename the preset or edit its saved filters.</p>
       </header>
       <div class="dialog-field">
         <input
@@ -311,15 +399,28 @@
           autocomplete="off"
           aria-label="Preset name"
           aria-describedby="edit-preset-name-error edit-preset-save-error"
+          data-i18n-aria-label="popupPresetNameLabel"
         />
         <p id="edit-preset-name-error" class="field-error" role="alert" hidden></p>
       </div>
 
       <div class="edit-json-toolbar">
-        <p class="edit-json-hint">Only preset.filters can be edited here.</p>
+        <p class="edit-json-hint" data-i18n="popupEditJsonHint">Only preset.filters can be edited here.</p>
         <div class="edit-json-actions">
-          <button id="format-edit-preset-json" class="button-secondary edit-json-action" type="button">Format</button>
-          <button id="reset-edit-preset-json" class="button-secondary edit-json-action" type="button">
+          <button
+            id="format-edit-preset-json"
+            class="button-secondary edit-json-action"
+            type="button"
+            data-i18n="popupActionFormat"
+          >
+            Format
+          </button>
+          <button
+            id="reset-edit-preset-json"
+            class="button-secondary edit-json-action"
+            type="button"
+            data-i18n="popupActionReset"
+          >
             Reset
           </button>
         </div>
@@ -334,6 +435,7 @@
           autocorrect="off"
           aria-label="Preset JSON"
           aria-describedby="edit-preset-validation edit-preset-save-error"
+          data-i18n-aria-label="popupEditPresetJsonLabel"
         ></textarea>
       </div>
 
@@ -341,8 +443,12 @@
       <p id="edit-preset-save-error" class="dialog-error" role="alert" hidden></p>
 
       <div class="dialog-actions edit-preset-footer">
-        <button id="cancel-edit-preset" class="button-secondary" type="button">Cancel</button>
-        <button id="confirm-edit-preset" class="button-primary" type="button">Save changes</button>
+        <button id="cancel-edit-preset" class="button-secondary" type="button" data-i18n="popupActionCancel">
+          Cancel
+        </button>
+        <button id="confirm-edit-preset" class="button-primary" type="button" data-i18n="popupActionSaveChanges">
+          Save changes
+        </button>
       </div>
     </section>
 
@@ -356,13 +462,27 @@
       tabindex="-1"
       hidden
     >
-      <h2 id="reset-create-preset-title">Discard JSON changes?</h2>
-      <p id="reset-create-preset-description">
+      <h2 id="reset-create-preset-title" data-i18n="popupResetCreateDialogTitle">Discard JSON changes?</h2>
+      <p id="reset-create-preset-description" data-i18n="popupResetCreateDialogDescription">
         Resetting will restore the initial create template, clear the preset name, and discard unsaved JSON changes.
       </p>
       <div class="dialog-actions">
-        <button id="cancel-reset-create-preset" class="button-secondary" type="button">Cancel</button>
-        <button id="confirm-reset-create-preset" class="button-primary" type="button">Reset</button>
+        <button
+          id="cancel-reset-create-preset"
+          class="button-secondary"
+          type="button"
+          data-i18n="popupActionCancel"
+        >
+          Cancel
+        </button>
+        <button
+          id="confirm-reset-create-preset"
+          class="button-primary"
+          type="button"
+          data-i18n="popupActionReset"
+        >
+          Reset
+        </button>
       </div>
     </section>
 
@@ -376,13 +496,17 @@
       tabindex="-1"
       hidden
     >
-      <h2 id="reset-edit-preset-title">Discard JSON changes?</h2>
-      <p id="reset-edit-preset-description">
+      <h2 id="reset-edit-preset-title" data-i18n="popupResetEditDialogTitle">Discard JSON changes?</h2>
+      <p id="reset-edit-preset-description" data-i18n="popupResetEditDialogDescription">
         Resetting will restore the JSON from when you opened the editor and keep the current preset name.
       </p>
       <div class="dialog-actions">
-        <button id="cancel-reset-edit-preset" class="button-secondary" type="button">Cancel</button>
-        <button id="confirm-reset-edit-preset" class="button-primary" type="button">Reset</button>
+        <button id="cancel-reset-edit-preset" class="button-secondary" type="button" data-i18n="popupActionCancel">
+          Cancel
+        </button>
+        <button id="confirm-reset-edit-preset" class="button-primary" type="button" data-i18n="popupActionReset">
+          Reset
+        </button>
       </div>
     </section>
 
@@ -395,18 +519,16 @@
       tabindex="-1"
       hidden
     >
-      <h2 id="delete-dialog-title">Delete preset?</h2>
-      <p id="delete-dialog-description">
-        Delete <strong id="delete-preset-name"></strong>? This permanently removes the preset.
-      </p>
+      <h2 id="delete-dialog-title" data-i18n="popupDeleteDialogTitle">Delete preset?</h2>
+      <p id="delete-dialog-description"></p>
       <p id="delete-error" class="dialog-error" role="alert" hidden></p>
       <div class="dialog-actions">
-        <button id="cancel-delete" class="button-secondary" type="button">Cancel</button>
+        <button id="cancel-delete" class="button-secondary" type="button" data-i18n="popupActionCancel">Cancel</button>
         <button id="confirm-delete" class="button-destructive button-with-icon" type="button">
           <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
             <path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13"></path>
           </svg>
-          <span>Delete</span>
+          <span data-i18n="popupDeleteDialogConfirm">Delete</span>
         </button>
       </div>
     </section>

@@ -8,6 +8,14 @@ import {
   setReviewFilterIncluded,
   type ReviewDraft
 } from "./reviewDraft";
+import {
+  formatDefaultPresetName,
+  formatReviewFilterDisclosureLabel,
+  formatReviewFilterIncludeLabel,
+  formatReviewFilterSelectedValueCount,
+  formatSelectedFilterCount
+} from "../shared/i18n/format";
+import { getMessage } from "../shared/i18n/messages";
 import type { FilterPresetItem, PagePresetCollection, Preset } from "../shared/types";
 
 type SavePresetOptions = {
@@ -81,8 +89,8 @@ export function createSaveReviewDialogController(
   function updateSelectionState(): void {
     const includedCount = reviewDraft?.filters.filter((item) => item.included).length ?? 0;
     const totalCount = reviewDraft?.filters.length ?? 0;
-    elements.selectionCount.textContent = `${includedCount} of ${totalCount} filters selected`;
-    elements.selectionGuidance.textContent = includedCount === 0 ? "Select at least one filter." : "";
+    elements.selectionCount.textContent = formatSelectedFilterCount(includedCount, totalCount);
+    elements.selectionGuidance.textContent = includedCount === 0 ? getMessage("saveReviewSelectionGuidanceRequired") : "";
     elements.confirmButton.disabled = includedCount === 0 || saveInFlight;
     elements.selectAllButton.disabled = totalCount === 0 || saveInFlight;
     elements.clearAllButton.disabled = totalCount === 0 || saveInFlight;
@@ -114,12 +122,12 @@ export function createSaveReviewDialogController(
       const checkbox = document.createElement("input");
       checkbox.type = "checkbox";
       checkbox.checked = item.included;
-      checkbox.setAttribute("aria-label", `Include ${item.filter.title}`);
+      checkbox.setAttribute("aria-label", formatReviewFilterIncludeLabel(item.filter.title));
 
       const disclosure = document.createElement("button");
       disclosure.type = "button";
       disclosure.className = "review-filter-disclosure";
-      disclosure.setAttribute("aria-label", `Show values for ${item.filter.title}`);
+      disclosure.setAttribute("aria-label", formatReviewFilterDisclosureLabel(item.filter.title, item.expanded));
       disclosure.setAttribute("aria-expanded", String(item.expanded));
       disclosure.setAttribute("aria-controls", `review-values-${item.capturedIndex}`);
       disclosure.innerHTML =
@@ -132,10 +140,7 @@ export function createSaveReviewDialogController(
       const count = document.createElement("span");
       count.className = "review-filter-count";
       count.textContent = String(item.filter.selectedLabels.length);
-      count.setAttribute(
-        "aria-label",
-        `${item.filter.selectedLabels.length} selected ${item.filter.selectedLabels.length === 1 ? "value" : "values"}`
-      );
+      count.setAttribute("aria-label", formatReviewFilterSelectedValueCount(item.filter.selectedLabels.length));
 
       const values = document.createElement("ul");
       values.id = `review-values-${item.capturedIndex}`;
@@ -154,7 +159,7 @@ export function createSaveReviewDialogController(
         const nextExpanded = disclosure.getAttribute("aria-expanded") !== "true";
         reviewDraft = setReviewFilterExpanded(reviewDraft, item.capturedIndex, nextExpanded);
         disclosure.setAttribute("aria-expanded", String(nextExpanded));
-        disclosure.setAttribute("aria-label", `${nextExpanded ? "Hide" : "Show"} values for ${item.filter.title}`);
+        disclosure.setAttribute("aria-label", formatReviewFilterDisclosureLabel(item.filter.title, nextExpanded));
         values.hidden = !nextExpanded;
       };
 
@@ -215,7 +220,7 @@ export function createSaveReviewDialogController(
 
   function open(filters: FilterPresetItem[]): boolean {
     reviewDraft = createReviewDraft(filters);
-    elements.nameInput.value = `Preset ${options.now().toLocaleString()}`;
+    elements.nameInput.value = formatDefaultPresetName(options.now().toLocaleString());
     setMessage(elements.nameError, "");
     setMessage(elements.storageError, "");
     elements.cancelButton.disabled = false;

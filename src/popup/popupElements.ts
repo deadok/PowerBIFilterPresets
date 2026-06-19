@@ -61,7 +61,7 @@ export type PopupElements = {
   cancelEditResetButton: HTMLButtonElement;
   confirmEditResetButton: HTMLButtonElement;
   deleteDialog: HTMLElement;
-  deletePresetName: HTMLElement;
+  deleteDescription: HTMLParagraphElement;
   deleteError: HTMLParagraphElement;
   cancelDeleteButton: HTMLButtonElement;
   confirmDeleteButton: HTMLButtonElement;
@@ -148,7 +148,7 @@ export function getPopupElements(root: ParentNode): PopupElements {
     cancelEditResetButton: requiredElement<HTMLButtonElement>(root, "#cancel-reset-edit-preset"),
     confirmEditResetButton: requiredElement<HTMLButtonElement>(root, "#confirm-reset-edit-preset"),
     deleteDialog: requiredElement<HTMLElement>(root, ".delete-dialog"),
-    deletePresetName: requiredElement<HTMLElement>(root, "#delete-preset-name"),
+    deleteDescription: requiredElement<HTMLParagraphElement>(root, "#delete-dialog-description"),
     deleteError: requiredElement<HTMLParagraphElement>(root, "#delete-error"),
     cancelDeleteButton: requiredElement<HTMLButtonElement>(root, "#cancel-delete"),
     confirmDeleteButton: requiredElement<HTMLButtonElement>(root, "#confirm-delete"),

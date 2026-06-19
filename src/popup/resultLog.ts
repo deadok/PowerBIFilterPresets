@@ -1,3 +1,4 @@
+import { formatResultLogLine } from "../shared/i18n/format";
 import { summarizeResults } from "../shared/resultSummary";
 import type { FilterOperationResult, OperationStatus } from "../shared/types";
 
@@ -34,7 +35,7 @@ export function applyStatusSeverity(status: OperationStatus): ResultSeverity {
 export function createApplyResultLines(results: FilterOperationResult[]): ResultLine[] {
   return [
     createResultLine(summarizeResults(results), "normal"),
-    ...results.map((result) => createResultLine(`${result.title}: ${result.message}`, applyStatusSeverity(result.status)))
+    ...results.map((result) => createResultLine(formatResultLogLine(result.title, result.message), applyStatusSeverity(result.status)))
   ];
 }
 

@@ -13,7 +13,7 @@ export type DeleteDialogElements = {
   presetSelect: HTMLSelectElement;
   saveButton: HTMLButtonElement;
   dialog: HTMLElement;
-  presetName: HTMLElement;
+  description: HTMLParagraphElement;
   error: HTMLParagraphElement;
   cancelButton: HTMLButtonElement;
   confirmButton: HTMLButtonElement;
@@ -28,6 +28,7 @@ type DeleteDialogControllerOptions = {
   closeDialog: () => void;
   renderMissingSelection: () => void;
   updateSelectedActionStates: () => void;
+  renderDescription: (presetName: string) => string;
   deletePreset: (presetId: string) => Promise<PagePresetCollection>;
   renderCollection: (collection: PagePresetCollection, preferredSelectionId?: string) => void;
   renderDeleted: () => void;
@@ -118,7 +119,7 @@ export function createDeleteDialogController(
       nextId: currentPresets[index + 1]?.id,
       previousId: currentPresets[index - 1]?.id
     };
-    elements.presetName.textContent = `“${preset.name}”`;
+    elements.description.textContent = options.renderDescription(`“${preset.name}”`);
     setMessage(elements.error, "");
     if (!options.openDialog()) {
       pendingDeletion = undefined;

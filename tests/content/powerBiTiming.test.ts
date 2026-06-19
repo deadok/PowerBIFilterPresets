@@ -11,4 +11,14 @@ describe("Power BI timing helpers", () => {
     await timing.delay(75);
     expect(timing.now()).toBe(100);
   });
+
+  it("advances deterministic time even for zero-delay ticks", async () => {
+    const timing = createDeterministicPowerBiTiming();
+
+    expect(timing.now()).toBe(0);
+    await timing.delay(0);
+    expect(timing.now()).toBe(1);
+    await timing.delay(0);
+    expect(timing.now()).toBe(2);
+  });
 });

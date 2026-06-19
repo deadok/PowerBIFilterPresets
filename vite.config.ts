@@ -1,19 +1,24 @@
-import { copyFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig, type Plugin } from "vite";
 
 function copyManifestPlugin(): Plugin {
   let manifestPath = resolve(__dirname, "manifest.json");
+  let localesDir = resolve(__dirname, "_locales");
   let outDir = resolve(__dirname, "dist");
 
   return {
     name: "copy-extension-manifest",
     configResolved(config) {
       manifestPath = resolve(config.root, "manifest.json");
+      localesDir = resolve(config.root, "_locales");
       outDir = resolve(config.root, config.build.outDir);
     },
     closeBundle() {
       copyFileSync(manifestPath, resolve(outDir, "manifest.json"));
+      if (existsSync(localesDir)) {
+        cpSync(localesDir, resolve(outDir, "_locales"), { recursive: true });
+      }
     }
   };
 }

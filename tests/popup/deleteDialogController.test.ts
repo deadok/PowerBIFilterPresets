@@ -26,7 +26,7 @@ function createFixture() {
     <select id="preset-select"></select>
     <button id="save-current">Save</button>
     <section class="delete-dialog" hidden tabindex="-1">
-      <span id="delete-preset-name"></span>
+      <p id="delete-dialog-description"></p>
       <p id="delete-error" hidden></p>
       <button id="cancel-delete">Cancel</button>
       <button id="confirm-delete">Delete preset</button>
@@ -38,7 +38,7 @@ function createFixture() {
     presetSelect: document.querySelector<HTMLSelectElement>("#preset-select")!,
     saveButton: document.querySelector<HTMLButtonElement>("#save-current")!,
     dialog: document.querySelector<HTMLElement>(".delete-dialog")!,
-    presetName: document.querySelector<HTMLElement>("#delete-preset-name")!,
+    description: document.querySelector<HTMLParagraphElement>("#delete-dialog-description")!,
     error: document.querySelector<HTMLParagraphElement>("#delete-error")!,
     cancelButton: document.querySelector<HTMLButtonElement>("#cancel-delete")!,
     confirmButton: document.querySelector<HTMLButtonElement>("#confirm-delete")!
@@ -66,6 +66,7 @@ describe("createDeleteDialogController", () => {
       closeDialog,
       renderMissingSelection: vi.fn(),
       updateSelectedActionStates: vi.fn(),
+      renderDescription: (presetName) => `Delete ${presetName}? This permanently removes the preset.`,
       deletePreset: vi.fn(),
       renderCollection: vi.fn(),
       renderDeleted: vi.fn(),
@@ -75,7 +76,7 @@ describe("createDeleteDialogController", () => {
     controller.open();
 
     expect(openDialog).toHaveBeenCalledOnce();
-    expect(elements.presetName.textContent).toBe("“Sales review”");
+    expect(elements.description.textContent).toBe("Delete “Sales review”? This permanently removes the preset.");
     expect(elements.error.hidden).toBe(true);
     expect(document.activeElement).toBe(elements.cancelButton);
 
@@ -83,7 +84,7 @@ describe("createDeleteDialogController", () => {
 
     expect(closeDialog).toHaveBeenCalledOnce();
     expect(elements.dialog.hidden).toBe(true);
-    expect(elements.presetName.textContent).toBe("“Sales review”");
+    expect(elements.description.textContent).toBe("Delete “Sales review”? This permanently removes the preset.");
     expect(elements.error.hidden).toBe(true);
     expect(controller.isInFlight()).toBe(false);
     expect(document.activeElement).toBe(elements.triggerButton);
@@ -110,6 +111,7 @@ describe("createDeleteDialogController", () => {
       },
       renderMissingSelection: vi.fn(),
       updateSelectedActionStates: vi.fn(),
+      renderDescription: (presetName) => `Delete ${presetName}? This permanently removes the preset.`,
       deletePreset,
       renderCollection,
       renderDeleted: vi.fn(),
@@ -157,6 +159,7 @@ describe("createDeleteDialogController", () => {
       },
       renderMissingSelection: vi.fn(),
       updateSelectedActionStates: vi.fn(),
+      renderDescription: (presetName) => `Delete ${presetName}? This permanently removes the preset.`,
       deletePreset,
       renderCollection: vi.fn(),
       renderDeleted: vi.fn(),
