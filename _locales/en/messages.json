@@ -191,6 +191,12 @@
   "popupSavedFilterCountSingular": {
     "message": "Saved $1 filter."
   },
+  "popupSavedFilterCountFew": {
+    "message": "Saved $1 filters."
+  },
+  "popupSavedFilterCountMany": {
+    "message": "Saved $1 filters."
+  },
   "popupSavedFilterCountPlural": {
     "message": "Saved $1 filters."
   },
@@ -233,11 +239,23 @@
   "pageStatusWithPresetCountSingular": {
     "message": "$1 preset for this URL"
   },
+  "pageStatusWithPresetCountFew": {
+    "message": "$1 presets for this URL"
+  },
+  "pageStatusWithPresetCountMany": {
+    "message": "$1 presets for this URL"
+  },
   "pageStatusWithPresetCountPlural": {
     "message": "$1 presets for this URL"
   },
   "saveReviewSelectionCountSingular": {
     "message": "$1 of $2 filter selected"
+  },
+  "saveReviewSelectionCountFew": {
+    "message": "$1 of $2 filters selected"
+  },
+  "saveReviewSelectionCountMany": {
+    "message": "$1 of $2 filters selected"
   },
   "saveReviewSelectionCountPlural": {
     "message": "$1 of $2 filters selected"
@@ -260,6 +278,12 @@
   "saveReviewFilterSelectedValueCountSingular": {
     "message": "$1 selected value"
   },
+  "saveReviewFilterSelectedValueCountFew": {
+    "message": "$1 selected values"
+  },
+  "saveReviewFilterSelectedValueCountMany": {
+    "message": "$1 selected values"
+  },
   "saveReviewFilterSelectedValueCountPlural": {
     "message": "$1 selected values"
   },
@@ -281,11 +305,23 @@
   "resultSummaryAppliedSingular": {
     "message": "Applied $1 filter."
   },
+  "resultSummaryAppliedFew": {
+    "message": "Applied $1 filters."
+  },
+  "resultSummaryAppliedMany": {
+    "message": "Applied $1 filters."
+  },
   "resultSummaryAppliedPlural": {
     "message": "Applied $1 filters."
   },
   "resultSummaryNeedsAttentionSingular": {
     "message": "$1 filter needs attention."
+  },
+  "resultSummaryNeedsAttentionFew": {
+    "message": "$1 filters need attention."
+  },
+  "resultSummaryNeedsAttentionMany": {
+    "message": "$1 filters need attention."
   },
   "resultSummaryNeedsAttentionPlural": {
     "message": "$1 filters need attention."

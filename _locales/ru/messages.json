@@ -191,6 +191,12 @@
   "popupSavedFilterCountSingular": {
     "message": "Сохранён $1 фильтр."
   },
+  "popupSavedFilterCountFew": {
+    "message": "Сохранено $1 фильтра."
+  },
+  "popupSavedFilterCountMany": {
+    "message": "Сохранено $1 фильтров."
+  },
   "popupSavedFilterCountPlural": {
     "message": "Сохранено $1 фильтров."
   },
@@ -233,11 +239,23 @@
   "pageStatusWithPresetCountSingular": {
     "message": "$1 пресет для этого URL"
   },
+  "pageStatusWithPresetCountFew": {
+    "message": "$1 пресета для этого URL"
+  },
+  "pageStatusWithPresetCountMany": {
+    "message": "$1 пресетов для этого URL"
+  },
   "pageStatusWithPresetCountPlural": {
     "message": "$1 пресетов для этого URL"
   },
   "saveReviewSelectionCountSingular": {
     "message": "Выбран $1 из $2 фильтра"
+  },
+  "saveReviewSelectionCountFew": {
+    "message": "Выбрано $1 из $2 фильтров"
+  },
+  "saveReviewSelectionCountMany": {
+    "message": "Выбрано $1 из $2 фильтров"
   },
   "saveReviewSelectionCountPlural": {
     "message": "Выбрано $1 из $2 фильтров"
@@ -260,6 +278,12 @@
   "saveReviewFilterSelectedValueCountSingular": {
     "message": "Выбрано $1 значение"
   },
+  "saveReviewFilterSelectedValueCountFew": {
+    "message": "Выбрано $1 значения"
+  },
+  "saveReviewFilterSelectedValueCountMany": {
+    "message": "Выбрано $1 значений"
+  },
   "saveReviewFilterSelectedValueCountPlural": {
     "message": "Выбрано $1 значений"
   },
@@ -281,11 +305,23 @@
   "resultSummaryAppliedSingular": {
     "message": "Применён $1 фильтр."
   },
+  "resultSummaryAppliedFew": {
+    "message": "Применено $1 фильтра."
+  },
+  "resultSummaryAppliedMany": {
+    "message": "Применено $1 фильтров."
+  },
   "resultSummaryAppliedPlural": {
     "message": "Применено $1 фильтров."
   },
   "resultSummaryNeedsAttentionSingular": {
     "message": "$1 фильтр требует внимания."
+  },
+  "resultSummaryNeedsAttentionFew": {
+    "message": "$1 фильтра требуют внимания."
+  },
+  "resultSummaryNeedsAttentionMany": {
+    "message": "$1 фильтров требуют внимания."
   },
   "resultSummaryNeedsAttentionPlural": {
     "message": "$1 фильтров требуют внимания."
