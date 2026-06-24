@@ -1,0 +1,332 @@
+{
+  "extensionName": {
+    "message": "Пресеты фильтров Power BI"
+  },
+  "extensionDescription": {
+    "message": "Сохраняйте и восстанавливайте локальные пресеты для встроенных списковых фильтров Power BI."
+  },
+  "actionDefaultTitle": {
+    "message": "Пресеты Power BI"
+  },
+  "popupTitle": {
+    "message": "Пресеты Power BI"
+  },
+  "popupLoadingCurrentPage": {
+    "message": "Загрузка текущей страницы..."
+  },
+  "popupHelpButtonLabel": {
+    "message": "Показать справку"
+  },
+  "popupSaveCurrentFilters": {
+    "message": "Сохранить текущие фильтры"
+  },
+  "popupCreatePresetLabel": {
+    "message": "Новый пресет"
+  },
+  "popupSelectedPresetLabel": {
+    "message": "Выбранный пресет"
+  },
+  "popupApplyPreset": {
+    "message": "Применить пресет"
+  },
+  "popupExportPresetLabel": {
+    "message": "Копировать JSON пресета"
+  },
+  "popupEditPresetLabel": {
+    "message": "Изменить пресет"
+  },
+  "popupDeletePresetLabel": {
+    "message": "Удалить пресет"
+  },
+  "popupSiteAccessRecommendationTitle": {
+    "message": "Ограничьте доступ к сайтам для лучшей приватности"
+  },
+  "popupSiteAccessRecommendationDescription": {
+    "message": "Для лучшей приватности ограничьте доступ этого расширения в Chrome только вашими доменами Power BI вместо доступа ко всем сайтам."
+  },
+  "popupSiteAccessRecommendationFollowUp": {
+    "message": "Откройте страницу расширений Chrome, нажмите «Подробнее» у этого расширения или щёлкните по его значку правой кнопкой и выберите «Управление расширением». Затем установите доступ к сайтам только для нужных доменов отчётов Power BI."
+  },
+  "popupSiteAccessRecommendationDismiss": {
+    "message": "Понятно"
+  },
+  "popupHelpDialogTitle": {
+    "message": "Как пользоваться пресетами"
+  },
+  "popupHelpDialogDescription": {
+    "message": "Краткие инструкции по основным сценариям в popup."
+  },
+  "popupHelpCloseLabel": {
+    "message": "Закрыть справку"
+  },
+  "popupHelpSaveTitle": {
+    "message": "Сохранить текущие фильтры"
+  },
+  "popupHelpSaveDescription": {
+    "message": "Откройте отчёт Power BI, задайте нужные фильтры, затем нажмите «Сохранить текущие фильтры». Проверьте захваченные фильтры и сохраните их как пресет."
+  },
+  "popupHelpApplyTitle": {
+    "message": "Применить пресет"
+  },
+  "popupHelpApplyDescription": {
+    "message": "Выберите сохранённый пресет и нажмите «Применить пресет». Расширение попытается установить сохранённые значения фильтров отчёта и покажет в журнале отсутствующие фильтры или значения."
+  },
+  "popupHelpCopyTitle": {
+    "message": "Копировать JSON"
+  },
+  "popupHelpCopyDescription": {
+    "message": "Выберите пресет и нажмите «Копировать JSON пресета», чтобы скопировать JSON-документ пресета для резервной копии или передачи."
+  },
+  "popupHelpAddTitle": {
+    "message": "Добавить пресет"
+  },
+  "popupHelpAddDescription": {
+    "message": "Нажмите «Новый пресет», чтобы создать пресет вручную. Перед сохранением можно изменить черновик JSON."
+  },
+  "popupHelpPasteTitle": {
+    "message": "Вставить JSON"
+  },
+  "popupHelpPasteDescription": {
+    "message": "В «Новый пресет» нажмите «Вставить JSON», чтобы вставить скопированный JSON-документ пресета из буфера обмена. Перед сохранением расширение проверит его."
+  },
+  "popupSaveReviewTitle": {
+    "message": "Проверьте фильтры перед сохранением"
+  },
+  "popupSaveReviewDescription": {
+    "message": "Выберите активные фильтры, которые нужно включить в этот пресет."
+  },
+  "popupPresetNameLabel": {
+    "message": "Имя пресета"
+  },
+  "popupReviewFiltersTitle": {
+    "message": "Фильтры для сохранения"
+  },
+  "popupSelectAllFiltersLabel": {
+    "message": "Выбрать все фильтры"
+  },
+  "popupClearAllFiltersLabel": {
+    "message": "Снять выбор со всех фильтров"
+  },
+  "popupReviewEmpty": {
+    "message": "Выбранные значения фильтров не найдены. Выберите значения в Power BI и попробуйте снова."
+  },
+  "popupActionCancel": {
+    "message": "Отмена"
+  },
+  "popupActionSavePreset": {
+    "message": "Сохранить пресет"
+  },
+  "popupCreateDialogTitle": {
+    "message": "Новый пресет"
+  },
+  "popupCreateDialogDescription": {
+    "message": "Создайте пресет вручную или вставьте общий JSON пресета."
+  },
+  "popupCreateJsonTitle": {
+    "message": "JSON пресета"
+  },
+  "popupCreateJsonHint": {
+    "message": "Вставьте общий JSON или добавьте хотя бы один фильтр."
+  },
+  "popupActionPasteJson": {
+    "message": "Вставить JSON"
+  },
+  "popupActionFormat": {
+    "message": "Форматировать"
+  },
+  "popupActionReset": {
+    "message": "Сбросить"
+  },
+  "popupActionCreatePreset": {
+    "message": "Создать пресет"
+  },
+  "popupEditDialogTitle": {
+    "message": "Изменить пресет"
+  },
+  "popupEditDialogDescription": {
+    "message": "Переименуйте пресет или измените сохранённые в нём фильтры."
+  },
+  "popupEditJsonHint": {
+    "message": "Здесь можно изменять только preset.filters."
+  },
+  "popupEditPresetJsonLabel": {
+    "message": "JSON пресета"
+  },
+  "popupActionSaveChanges": {
+    "message": "Сохранить изменения"
+  },
+  "popupResetCreateDialogTitle": {
+    "message": "Отменить изменения JSON?"
+  },
+  "popupResetCreateDialogDescription": {
+    "message": "Сброс восстановит исходный шаблон создания, очистит имя пресета и отменит несохранённые изменения JSON."
+  },
+  "popupResetEditDialogTitle": {
+    "message": "Отменить изменения JSON?"
+  },
+  "popupResetEditDialogDescription": {
+    "message": "Сброс восстановит JSON в состоянии на момент открытия редактора и сохранит текущее имя пресета."
+  },
+  "popupDeleteDialogTitle": {
+    "message": "Удалить пресет?"
+  },
+  "popupDeleteDialogDescription": {
+    "message": "Удалить $1? Это действие навсегда удалит пресет."
+  },
+  "popupDeleteDialogConfirm": {
+    "message": "Удалить"
+  },
+  "popupActionFailed": {
+    "message": "Не удалось выполнить действие в popup."
+  },
+  "popupActionFailedWithDetail": {
+    "message": "Не удалось выполнить действие в popup: $1"
+  },
+  "popupSelectPresetFirst": {
+    "message": "Сначала выберите пресет."
+  },
+  "popupPresetDeleted": {
+    "message": "Пресет удалён."
+  },
+  "popupSavedFilterCountSingular": {
+    "message": "Сохранён $1 фильтр."
+  },
+  "popupSavedFilterCountFew": {
+    "message": "Сохранено $1 фильтра."
+  },
+  "popupSavedFilterCountMany": {
+    "message": "Сохранено $1 фильтров."
+  },
+  "popupSavedFilterCountPlural": {
+    "message": "Сохранено $1 фильтров."
+  },
+  "popupPresetCreated": {
+    "message": "Пресет создан."
+  },
+  "popupPresetUpdated": {
+    "message": "Пресет обновлён."
+  },
+  "popupReadingFilters": {
+    "message": "Чтение фильтров..."
+  },
+  "popupReadFiltersFailedWithDetail": {
+    "message": "Не удалось прочитать фильтры: $1"
+  },
+  "popupNoFiltersReturned": {
+    "message": "Фильтры не были возвращены."
+  },
+  "popupApplyingPreset": {
+    "message": "Применение пресета..."
+  },
+  "popupApplyPresetFailedWithDetail": {
+    "message": "Не удалось применить пресет: $1"
+  },
+  "popupNoResultsReturned": {
+    "message": "Результаты не были возвращены."
+  },
+  "popupPresetJsonCopied": {
+    "message": "JSON пресета скопирован."
+  },
+  "popupPopupLoadFailedWithDetail": {
+    "message": "Не удалось загрузить popup: $1"
+  },
+  "popupClipboardUnavailable": {
+    "message": "Доступ к буферу обмена недоступен."
+  },
+  "popupSiteAccessReminderSaveFailed": {
+    "message": "Не удалось сохранить настройку напоминания о доступе к сайтам: $1 Напоминание может появиться снова."
+  },
+  "pageStatusWithPresetCountSingular": {
+    "message": "$1 пресет для этого URL"
+  },
+  "pageStatusWithPresetCountFew": {
+    "message": "$1 пресета для этого URL"
+  },
+  "pageStatusWithPresetCountMany": {
+    "message": "$1 пресетов для этого URL"
+  },
+  "pageStatusWithPresetCountPlural": {
+    "message": "$1 пресетов для этого URL"
+  },
+  "saveReviewSelectionCountSingular": {
+    "message": "Выбран $1 из $2 фильтра"
+  },
+  "saveReviewSelectionCountFew": {
+    "message": "Выбрано $1 из $2 фильтров"
+  },
+  "saveReviewSelectionCountMany": {
+    "message": "Выбрано $1 из $2 фильтров"
+  },
+  "saveReviewSelectionCountPlural": {
+    "message": "Выбрано $1 из $2 фильтров"
+  },
+  "saveReviewSelectionGuidanceRequired": {
+    "message": "Выберите хотя бы один фильтр."
+  },
+  "saveReviewDefaultName": {
+    "message": "Пресет $1"
+  },
+  "saveReviewFilterIncludeLabel": {
+    "message": "Включить $1"
+  },
+  "saveReviewFilterShowValuesLabel": {
+    "message": "Показать значения для $1"
+  },
+  "saveReviewFilterHideValuesLabel": {
+    "message": "Скрыть значения для $1"
+  },
+  "saveReviewFilterSelectedValueCountSingular": {
+    "message": "Выбрано $1 значение"
+  },
+  "saveReviewFilterSelectedValueCountFew": {
+    "message": "Выбрано $1 значения"
+  },
+  "saveReviewFilterSelectedValueCountMany": {
+    "message": "Выбрано $1 значений"
+  },
+  "saveReviewFilterSelectedValueCountPlural": {
+    "message": "Выбрано $1 значений"
+  },
+  "jsonValidationValid": {
+    "message": "JSON корректен."
+  },
+  "createDialogClipboardDenied": {
+    "message": "Доступ к буферу обмена был запрещён."
+  },
+  "createDialogClipboardReadFailed": {
+    "message": "Не удалось прочитать буфер обмена."
+  },
+  "createDialogClipboardEmpty": {
+    "message": "Буфер обмена не содержит JSON пресета."
+  },
+  "resultSummaryNoneFound": {
+    "message": "Поддерживаемые списковые фильтры не найдены."
+  },
+  "resultSummaryAppliedSingular": {
+    "message": "Применён $1 фильтр."
+  },
+  "resultSummaryAppliedFew": {
+    "message": "Применено $1 фильтра."
+  },
+  "resultSummaryAppliedMany": {
+    "message": "Применено $1 фильтров."
+  },
+  "resultSummaryAppliedPlural": {
+    "message": "Применено $1 фильтров."
+  },
+  "resultSummaryNeedsAttentionSingular": {
+    "message": "$1 фильтр требует внимания."
+  },
+  "resultSummaryNeedsAttentionFew": {
+    "message": "$1 фильтра требуют внимания."
+  },
+  "resultSummaryNeedsAttentionMany": {
+    "message": "$1 фильтров требуют внимания."
+  },
+  "resultSummaryNeedsAttentionPlural": {
+    "message": "$1 фильтров требуют внимания."
+  },
+  "resultLogLineTemplate": {
+    "message": "$1: $2"
+  }
+}

@@ -49,4 +49,8 @@ describe("extension manifest localization", () => {
   it("emits the English locale catalog into the build output", () => {
     expect(existsSync(join(testBuild.outDir, "_locales", "en", "messages.json"))).toBe(true);
   });
+
+  it("emits the Russian locale catalog into the build output", () => {
+    expect(existsSync(join(testBuild.outDir, "_locales", "ru", "messages.json"))).toBe(true);
+  });
 });

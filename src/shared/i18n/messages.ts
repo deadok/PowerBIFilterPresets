@@ -12,6 +12,7 @@ const sourceCatalog = englishMessages as SourceCatalog;
 export type MessageKey = keyof typeof englishMessages;
 
 let testCatalog: TestCatalog | undefined;
+let testLocale: string | undefined;
 
 function applySubstitutions(template: string, substitutions?: string[]): string {
   if (!substitutions) {
@@ -32,8 +33,25 @@ export function installTestMessages(messages: TestCatalog): void {
   testCatalog = messages;
 }
 
+export function installTestLocale(locale: string): void {
+  testLocale = locale;
+}
+
 export function resetTestMessages(): void {
   testCatalog = undefined;
+}
+
+export function resetTestLocale(): void {
+  testLocale = undefined;
+}
+
+export function getLocale(): string {
+  const runtimeLocale = globalThis.chrome?.i18n?.getUILanguage?.();
+  if (runtimeLocale && runtimeLocale.trim() !== "") {
+    return runtimeLocale;
+  }
+
+  return testLocale ?? "en";
 }
 
 export function getMessage(key: MessageKey, substitutions?: string[]): string {

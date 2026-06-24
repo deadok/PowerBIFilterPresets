@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { installTestMessages, resetTestMessages } from "../../src/shared/i18n/messages";
+import {
+  installTestLocale,
+  installTestMessages,
+  resetTestLocale,
+  resetTestMessages
+} from "../../src/shared/i18n/messages";
 import { summarizeResults } from "../../src/shared/resultSummary";
 import type { FilterOperationResult } from "../../src/shared/types";
 
@@ -17,6 +22,7 @@ describe("summarizeResults", () => {
   });
 
   afterEach(() => {
+    resetTestLocale();
     resetTestMessages();
   });
 
@@ -49,5 +55,31 @@ describe("summarizeResults", () => {
     ];
 
     expect(summarizeResults(results)).toBe("Applied 0 filters successfully. 2 filters need review.");
+  });
+
+  it("uses Russian plural categories in result summaries", () => {
+    installTestLocale("ru");
+    installTestMessages(
+      {
+        resultSummaryAppliedSingular: "Применён $1 фильтр.",
+        resultSummaryAppliedFew: "Применено $1 фильтра.",
+        resultSummaryAppliedMany: "Применено $1 фильтров.",
+        resultSummaryAppliedPlural: "Применено $1 фильтров.",
+        resultSummaryNeedsAttentionSingular: "$1 фильтр требует внимания.",
+        resultSummaryNeedsAttentionFew: "$1 фильтра требуют внимания.",
+        resultSummaryNeedsAttentionMany: "$1 фильтров требуют внимания.",
+        resultSummaryNeedsAttentionPlural: "$1 фильтров требуют внимания.",
+        resultSummaryNoneFound: "Поддерживаемые списковые фильтры не найдены."
+      } as Parameters<typeof installTestMessages>[0]
+    );
+
+    const results: FilterOperationResult[] = [
+      { title: "Region", status: "applied", message: "Applied 2 values." },
+      { title: "Country", status: "applied", message: "Applied 1 value." },
+      { title: "Product", status: "missing_value", message: "Value was not found." },
+      { title: "City", status: "missing_value", message: "Value was not found." }
+    ];
+
+    expect(summarizeResults(results)).toBe("Применено 2 фильтра. 2 фильтра требуют внимания.");
   });
 });
