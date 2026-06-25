@@ -1,0 +1,69 @@
+name: Release task
+description: Prepare and publish a release
+title: "Release: v"
+labels:
+  - type:release
+  - status:ready
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for release preparation and publication. Release actions require explicit approval.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Stable semantic version without leading v.
+      placeholder: "0.2.0"
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Release scope
+      description: Summarize the changes expected in this release.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Required validation
+      value: |
+        Branch-stage before PR merge:
+        - npm ci
+        - npm run release:verify-source -- --tag vX.Y.Z --commit HEAD --main-ref origin/main
+        - npm test
+        - npm run typecheck
+        - npm run build
+        - npm run release:verify-built -- --tag vX.Y.Z
+
+        Final merged-main gate before tagging:
+        - git switch main
+        - git merge --ff-only origin/main
+        - npm run release:verify-source -- --tag vX.Y.Z --commit HEAD --main-ref origin/main --require-reachability
+
+        Published release verification:
+        - Verify ZIP, CRX, and SHA256SUMS assets.
+    validations:
+      required: true
+  - type: checkboxes
+    id: approvals
+    attributes:
+      label: Explicit approvals
+      description: Checked boxes record maintainer intent, but do not replace explicit approval in the current conversation or issue comments before agents act.
+      options:
+        - label: Version PR may be created.
+          required: false
+        - label: Version PR may be merged.
+          required: false
+        - label: Matching release tag may be pushed.
+          required: false
+        - label: Published GitHub Release may be verified.
+          required: false
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks or notes
+      description: Mention signing secret, release workflow, or artifact concerns.
+    validations:
+      required: false

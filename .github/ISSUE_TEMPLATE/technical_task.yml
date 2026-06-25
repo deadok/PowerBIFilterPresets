@@ -1,0 +1,48 @@
+name: Technical task
+description: Track code health, documentation, tooling, or maintenance work
+title: "Task: "
+labels:
+  - type:task
+  - status:ready
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for non-feature maintenance work. Add `agent:approved` only when an agent may start work.
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Why is this task needed?
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: Exact files, docs, systems, or behavior in scope.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      placeholder: |
+        - ...
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation plan
+      placeholder: |
+        - git diff --check
+        - npm test / typecheck / build if product code changes
+    validations:
+      required: true
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+    validations:
+      required: false
