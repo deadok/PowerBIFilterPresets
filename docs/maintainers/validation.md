@@ -74,8 +74,10 @@ Manual validation is required when:
 - the task changes extension permissions, install flow, or release artifacts;
 - the issue explicitly asks for standalone Chrome validation.
 
-When applicable, use `docs/qa/manual-powerbi-portal-checklist.md` as the
-canonical Power BI manual validation checklist.
+For Power BI report validation, use `docs/manual-validation-playbook.md` as the
+canonical current playbook. The older
+`docs/qa/manual-powerbi-portal-checklist.md` can provide extra
+environment-specific context when it is explicitly relevant.
 
 Report manual validation as one of:
 
