@@ -40,6 +40,15 @@ Do not read the entire repository or all historical docs by default.
 - `migrated/` — inspected historical docs that were intentionally moved into
   the tracked repository.
 
+## Reference docs
+
+- `../power-bi-filter-approaches.md` — maintained technical reference for
+  Power BI filter discovery, save/capture, apply, iframe, and virtualization
+  behavior.
+- `../manual-validation-playbook.md` — maintained manual validation guide for
+  standalone Chrome, embedded Power BI reports, diagnostics, and release
+  artifacts.
+
 ## Core rules
 
 - GitHub Issues are the normal source of work.
