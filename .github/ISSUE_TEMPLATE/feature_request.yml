@@ -1,0 +1,62 @@
+name: Feature request
+description: Specify a user-facing feature
+title: "Feature: "
+labels:
+  - type:feature
+  - status:ready
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for user-facing capability changes. Add `agent:approved` only when an agent may start work.
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem
+      description: What user need or workflow does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: requirements
+    attributes:
+      label: Requirements
+      description: Authoritative behavior requirements for this feature.
+      placeholder: |
+        - Users can ...
+        - The extension must ...
+        - The UI should ...
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      placeholder: |
+        - ...
+    validations:
+      required: true
+  - type: textarea
+    id: linked-docs
+    attributes:
+      label: Linked docs or designs
+      description: Link specs, mockups, or migrated docs if relevant.
+    validations:
+      required: false
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation plan
+      placeholder: |
+        - npm test
+        - npm run typecheck
+        - npm run build
+        - Manual validation if required
+    validations:
+      required: true
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: List related work that should not be included.
+    validations:
+      required: false

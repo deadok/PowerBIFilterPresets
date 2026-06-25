@@ -1,0 +1,85 @@
+name: Bug report
+description: Report a defect or regression
+title: "Bug: "
+labels:
+  - type:bug
+  - status:ready
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for user-visible defects. Add `agent:approved` only when an agent may start work.
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: What is broken, where it happens, and who is affected?
+      placeholder: "Example: Applying a preset reports a missing value for a visible Power BI list filter."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest reliable reproduction path.
+      placeholder: |
+        1. Open ...
+        2. Select ...
+        3. Apply ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: linked-docs
+    attributes:
+      label: Linked docs or artifacts
+      description: Link sanitized logs, screenshots, presets, or migrated docs if relevant.
+      placeholder: "Links only; do not paste credentials or private URLs."
+    validations:
+      required: false
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      placeholder: |
+        - The bug no longer reproduces.
+        - Existing behavior is preserved.
+        - Validation evidence is reported.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation plan
+      placeholder: |
+        - npm test
+        - npm run typecheck
+        - npm run build
+        - Manual Chrome/Power BI validation if required
+    validations:
+      required: true
+  - type: checkboxes
+    id: manual
+    attributes:
+      label: Manual validation
+      options:
+        - label: This issue requires standalone Chrome or Power BI manual validation.
+          required: false
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: List related changes agents must not include.
+    validations:
+      required: false
