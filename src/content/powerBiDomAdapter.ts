@@ -295,7 +295,7 @@ async function selectedLabelsForControl(root: ParentNode, control: ListControl, 
           openedCombobox = combobox;
         }
       });
-      const selectedLabels: string[] = [];
+      const selectedLabels = selectedLabelsFromSlicerOptions(options);
 
       await scanSlicerOptions(root, control, control.title, options, (currentOptions) => {
         selectedLabels.push(
