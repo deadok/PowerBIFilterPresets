@@ -250,6 +250,60 @@ describe("createPowerBiDomAdapter", () => {
     ]);
   });
 
+  it("preserves selected dropdown values hidden by an active text filter while saving", async () => {
+    document.body.innerHTML = `
+      <main>
+        <section class="visual customPadding visual-slicer">
+          <div class="slicer-container">
+            <h3 class="slicer-header-text" aria-label="Task type" title="Task type">Task type</h3>
+            <div class="slicer-content-wrapper">
+              <input type="search" placeholder="Search" aria-label="Search" value="Sto" />
+            </div>
+          </div>
+        </section>
+      </main>
+      <div class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicer-dropdown-content">
+          <div class="slicerContainer isMultiSelectEnabled">
+            <div class="searchHeader show">
+              <input type="text" aria-label="Search" placeholder="Search" value="Sto" />
+            </div>
+            <div class="slicerBody" role="listbox" aria-label="Task type">
+              <div class="slicerItemContainer" role="option" aria-selected="true" title="Story">
+                <div class="slicerCheckbox selected"></div>
+                <span class="slicerText">Story</span>
+              </div>
+              <div class="slicerItemContainer" role="option" aria-selected="false" title="Substory">
+                <div class="slicerCheckbox"></div>
+                <span class="slicerText">Substory</span>
+              </div>
+              <div class="slicerItemContainer" role="option" aria-selected="true" title="Tech debt">
+                <div class="slicerCheckbox selected"></div>
+                <span class="slicerText">Tech debt</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    const listbox = document.querySelector<HTMLElement>('[role="listbox"][aria-label="Task type"]');
+    expect(listbox).not.toBeNull();
+    listbox!.addEventListener(
+      "scroll",
+      () => {
+        const hiddenSelectedOption = listbox!.querySelector<HTMLElement>('[title="Tech debt"]');
+        hiddenSelectedOption?.remove();
+      },
+      { once: true }
+    );
+
+    const adapter = createAdapter(document, { realTime: true });
+
+    await expect(adapter.readListFilters()).resolves.toEqual([
+      { title: "Task type", type: "list", selectedLabels: ["Story", "Tech debt"] }
+    ]);
+  });
+
   it("reopens generic multi-select dropdowns when a stale external listbox has no selected options", async () => {
     document.body.innerHTML = `
       <main>
