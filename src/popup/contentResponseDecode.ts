@@ -32,20 +32,26 @@ function decodeFilters(value: unknown): FilterPresetItem[] | undefined {
 
   const filters: FilterPresetItem[] = [];
   for (const filter of value) {
+    const keys = isRecord(filter) && filter.selectionMode !== undefined
+      ? ["title", "type", "selectedLabels", "selectionMode"]
+      : ["title", "type", "selectedLabels"];
     if (
       !isRecord(filter) ||
-      !hasOnlyKeys(filter, ["title", "type", "selectedLabels"]) ||
+      !hasOnlyKeys(filter, keys) ||
       typeof filter.title !== "string" ||
       filter.type !== "list" ||
       !Array.isArray(filter.selectedLabels) ||
-      !filter.selectedLabels.every((label) => typeof label === "string")
+      !filter.selectedLabels.every((label) => typeof label === "string") ||
+      (filter.selectionMode !== undefined && filter.selectionMode !== "all" && filter.selectionMode !== "none") ||
+      (filter.selectionMode !== undefined && filter.selectedLabels.length > 0)
     ) {
       return undefined;
     }
     filters.push({
       title: filter.title,
       type: "list",
-      selectedLabels: [...filter.selectedLabels]
+      selectedLabels: [...filter.selectedLabels],
+      ...(filter.selectionMode ? { selectionMode: filter.selectionMode } : {})
     });
   }
   return filters;

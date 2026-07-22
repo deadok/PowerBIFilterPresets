@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   scanSnapshotsByScrollbarDrag,
   scanSnapshotsByWheel,
+  scrollElementForListbox,
   scrollPlanForElement,
   scrollSlicerSnapshotTo,
   type SlicerListboxSnapshot
@@ -28,7 +29,25 @@ function signatureForSnapshots(snapshots: SlicerListboxSnapshot[]): string {
     .join("\n");
 }
 
+function topologyForSnapshots(snapshots: SlicerListboxSnapshot[]): string {
+  return snapshots.length > 0 ? "live" : "";
+}
+
 describe("Power BI scroll strategies", () => {
+  it("uses the snapshot-shaped descendant scroll-content instead of the listbox", () => {
+    document.body.innerHTML = `
+      <div class="slicerBody" role="listbox">
+        <div class="scroll-wrapper"><div class="scroll-content"><div role="option">A</div></div></div>
+      </div>
+    `;
+    const listbox = document.querySelector<HTMLElement>('[role="listbox"]')!;
+    const scrollContent = document.querySelector<HTMLElement>(".scroll-content")!;
+    Object.defineProperty(scrollContent, "clientHeight", { configurable: true, value: 40 });
+    Object.defineProperty(scrollContent, "scrollHeight", { configurable: true, value: 120 });
+
+    expect(scrollElementForListbox(listbox)).toBe(scrollContent);
+  });
+
   it("builds a bounded deterministic scroll plan from DOM scroll metrics", () => {
     const element = document.createElement("div");
 
@@ -106,17 +125,43 @@ describe("Power BI scroll strategies", () => {
 
     const seenLabels: string[] = [];
     seenLabels.push(...snapshotFor(listbox, scrollHost).options.map(labelForSlicerOption));
-    await scanSnapshotsByWheel({
+    const completed = await scanSnapshotsByWheel({
       snapshotProvider: () => [snapshotFor(listbox, scrollHost)],
       snapshotsSignature: signatureForSnapshots,
+      snapshotsTopology: topologyForSnapshots,
       onOptions: (options) => {
         seenLabels.push(...options.map(labelForSlicerOption));
       },
       intervalMs: 0,
-      timing: createDeterministicPowerBiTiming()
+      timing: createDeterministicPowerBiTiming(),
+      deadline: 100000
     });
 
+    expect(completed).toEqual({ status: "complete", topology: "live" });
     expect(new Set(seenLabels)).toEqual(new Set(["A", "B", "C", "D", "E"]));
+  });
+
+  it("reports wheel budget exhaustion when every bounded step reveals another slice", async () => {
+    document.body.innerHTML = `<div role="listbox"><div role="option" title="step-0"></div></div>`;
+    const listbox = document.querySelector<HTMLElement>('[role="listbox"]')!;
+    let step = 0;
+    listbox.addEventListener("wheel", () => {
+      step += 1;
+      listbox.innerHTML = `<div role="option" title="step-${step}"></div>`;
+    });
+
+    await expect(
+      scanSnapshotsByWheel({
+        snapshotProvider: () => [snapshotFor(listbox, listbox)],
+        snapshotsSignature: signatureForSnapshots,
+        snapshotsTopology: topologyForSnapshots,
+        onOptions: () => undefined,
+        intervalMs: 0,
+        timing: createDeterministicPowerBiTiming(),
+        deadline: 100000
+      })
+    ).resolves.toEqual({ status: "exhausted", topology: "live" });
+    expect(step).toBe(40);
   });
 
   it("walks virtualized slices through visible scrollbar dragging", async () => {
@@ -166,16 +211,53 @@ describe("Power BI scroll strategies", () => {
 
     const seenLabels: string[] = [];
     seenLabels.push(...snapshotFor(listbox, scrollHost).options.map(labelForSlicerOption));
-    await scanSnapshotsByScrollbarDrag({
+    const completed = await scanSnapshotsByScrollbarDrag({
       snapshotProvider: () => [snapshotFor(listbox, scrollHost)],
       snapshotsSignature: signatureForSnapshots,
+      snapshotsTopology: topologyForSnapshots,
       onOptions: (options) => {
         seenLabels.push(...options.map(labelForSlicerOption));
       },
       intervalMs: 0,
-      timing: createDeterministicPowerBiTiming()
+      timing: createDeterministicPowerBiTiming(),
+      deadline: 100000
     });
 
+    expect(completed).toEqual({ status: "complete", topology: "live" });
     expect(new Set(seenLabels)).toEqual(new Set(["A", "B", "C", "D", "E"]));
+  });
+
+  it("reports scrollbar-drag budget exhaustion when every bounded drag reveals another slice", async () => {
+    document.body.innerHTML = `
+      <div class="slicer-dropdown-popup">
+        <div role="listbox"><div role="option" title="step-0"></div></div>
+        <div class="scroll-element scroll-y">
+          <div class="scroll-element_track"></div><div class="scroll-bar"></div>
+        </div>
+      </div>
+    `;
+    const listbox = document.querySelector<HTMLElement>('[role="listbox"]')!;
+    const track = document.querySelector<HTMLElement>(".scroll-element_track")!;
+    const scrollBar = document.querySelector<HTMLElement>(".scroll-bar")!;
+    track.getBoundingClientRect = () => ({ top: 0, bottom: 100, left: 0, right: 8, width: 8, height: 100, x: 0, y: 0, toJSON: () => ({}) });
+    scrollBar.getBoundingClientRect = () => ({ top: 10, bottom: 30, left: 0, right: 8, width: 8, height: 20, x: 0, y: 10, toJSON: () => ({}) });
+    let step = 0;
+    scrollBar.addEventListener("mouseup", () => {
+      step += 1;
+      listbox.innerHTML = `<div role="option" title="step-${step}"></div>`;
+    });
+
+    await expect(
+      scanSnapshotsByScrollbarDrag({
+        snapshotProvider: () => [snapshotFor(listbox, listbox)],
+        snapshotsSignature: signatureForSnapshots,
+        snapshotsTopology: topologyForSnapshots,
+        onOptions: () => undefined,
+        intervalMs: 0,
+        timing: createDeterministicPowerBiTiming(),
+        deadline: 100000
+      })
+    ).resolves.toEqual({ status: "exhausted", topology: "live" });
+    expect(step).toBe(31);
   });
 });

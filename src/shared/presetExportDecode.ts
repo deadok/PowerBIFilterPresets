@@ -35,11 +35,22 @@ function decodeFilters(value: unknown): FilterPresetItem[] {
     const selectedLabels = filterValue.selectedLabels.map((labelValue, labelIndex) =>
       requireString(labelValue, `${filterPath}.selectedLabels[${labelIndex}]`)
     );
+    if (
+      filterValue.selectionMode !== undefined &&
+      filterValue.selectionMode !== "all" &&
+      filterValue.selectionMode !== "none"
+    ) {
+      throw new Error(`Invalid preset export: ${filterPath}.selectionMode must be "all" or "none".`);
+    }
+    if (filterValue.selectionMode !== undefined && selectedLabels.length > 0) {
+      throw new Error(`Invalid preset export: ${filterPath}.selectedLabels must be empty when selectionMode is set.`);
+    }
 
     return {
       title,
       type: "list" as const,
-      selectedLabels
+      selectedLabels,
+      ...(filterValue.selectionMode ? { selectionMode: filterValue.selectionMode } : {})
     };
   });
 }

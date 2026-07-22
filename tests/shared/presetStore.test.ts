@@ -106,7 +106,9 @@ describe("createPresetStore", () => {
     ["unsupported filter kind", { title: "Region", type: "range", selectedLabels: ["EMEA"] }],
     ["non-array selected labels", { title: "Region", type: "list", selectedLabels: "EMEA" }],
     ["non-string selected label", { title: "Region", type: "list", selectedLabels: ["EMEA", 4] }],
-    ["empty selected label", { title: "Region", type: "list", selectedLabels: [""] }]
+    ["empty selected label", { title: "Region", type: "list", selectedLabels: [""] }],
+    ["invalid selection mode", { title: "Region", type: "list", selectedLabels: [], selectionMode: "some" }],
+    ["contradictory selection mode", { title: "Region", type: "list", selectedLabels: ["EMEA"], selectionMode: "all" }]
   ])("returns an empty collection for %s", async (_description, invalidFilter) => {
     const storage = createFakeStorage();
     storage.data[storageKey] = storedCollection([{ ...samplePreset, filters: [invalidFilter] }]);
@@ -143,6 +145,22 @@ describe("createPresetStore", () => {
     const store = createPresetStore(storage);
 
     await expect(store.getPageCollection(pageKey)).resolves.toEqual(collection);
+  });
+
+  it("loads and preserves all and none selection modes", async () => {
+    const storage = createFakeStorage();
+    const collection = storedCollection([
+      {
+        ...samplePreset,
+        filters: [
+          { title: "Region", type: "list", selectedLabels: [], selectionMode: "all" },
+          { title: "Product", type: "list", selectedLabels: [], selectionMode: "none" }
+        ]
+      }
+    ]);
+    storage.data[storageKey] = collection;
+
+    await expect(createPresetStore(storage).getPageCollection(pageKey)).resolves.toEqual(collection);
   });
 
   it("saves presets by page key", async () => {

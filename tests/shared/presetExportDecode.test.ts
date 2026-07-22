@@ -23,6 +23,15 @@ describe.each(parsers)("%s preset export parser", (_name, parse) => {
     expect(parse(samplePreset)).toEqual(samplePreset);
   });
 
+  it("preserves selection modes without depending on a localized label", () => {
+    const modePreset: Preset = {
+      ...samplePreset,
+      filters: [{ title: "Region", type: "list", selectedLabels: [], selectionMode: "all" }]
+    };
+
+    expect(parse({ schemaVersion: 1, preset: modePreset })).toEqual(modePreset);
+  });
+
   it.each([
     ["{not json", "Invalid preset export JSON."],
     [null, "Invalid preset export: expected an object."],
@@ -52,6 +61,14 @@ describe.each(parsers)("%s preset export parser", (_name, parse) => {
     [
       { ...samplePreset, filters: [{ title: "Region", type: "list", selectedLabels: ["EMEA", 4] }] },
       "Invalid preset export: preset.filters[0].selectedLabels[1] must be a string."
+    ],
+    [
+      { ...samplePreset, filters: [{ title: "Region", type: "list", selectedLabels: [], selectionMode: "invalid" }] },
+      'Invalid preset export: preset.filters[0].selectionMode must be "all" or "none".'
+    ],
+    [
+      { ...samplePreset, filters: [{ title: "Region", type: "list", selectedLabels: ["EMEA"], selectionMode: "all" }] },
+      "Invalid preset export: preset.filters[0].selectedLabels must be empty when selectionMode is set."
     ]
   ])("rejects invalid input with a stable error", (input, message) => {
     expect(() => parse(input)).toThrow(message);

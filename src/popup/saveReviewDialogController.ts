@@ -139,14 +139,20 @@ export function createSaveReviewDialogController(
 
       const count = document.createElement("span");
       count.className = "review-filter-count";
-      count.textContent = String(item.filter.selectedLabels.length);
-      count.setAttribute("aria-label", formatReviewFilterSelectedValueCount(item.filter.selectedLabels.length));
+      const selectionModeLabel = item.filter.selectionMode
+        ? getMessage(item.filter.selectionMode === "all" ? "saveReviewFilterSelectionAll" : "saveReviewFilterSelectionNone")
+        : undefined;
+      count.textContent = selectionModeLabel ?? String(item.filter.selectedLabels.length);
+      count.setAttribute(
+        "aria-label",
+        selectionModeLabel ?? formatReviewFilterSelectedValueCount(item.filter.selectedLabels.length)
+      );
 
       const values = document.createElement("ul");
       values.id = `review-values-${item.capturedIndex}`;
       values.className = "review-filter-values";
       values.hidden = !item.expanded;
-      for (const label of item.filter.selectedLabels) {
+      for (const label of selectionModeLabel ? [selectionModeLabel] : item.filter.selectedLabels) {
         const value = document.createElement("li");
         value.textContent = label;
         values.append(value);

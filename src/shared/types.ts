@@ -4,6 +4,7 @@ export type FilterPresetItem = {
   title: string;
   type: FilterType;
   selectedLabels: string[];
+  selectionMode?: "all" | "none";
 };
 
 export type Preset = {

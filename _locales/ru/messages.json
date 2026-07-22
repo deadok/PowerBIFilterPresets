@@ -287,6 +287,12 @@
   "saveReviewFilterSelectedValueCountPlural": {
     "message": "Выбрано $1 значений"
   },
+  "saveReviewFilterSelectionAll": {
+    "message": "Выбрать всё"
+  },
+  "saveReviewFilterSelectionNone": {
+    "message": "Ничего не выбрано"
+  },
   "jsonValidationValid": {
     "message": "JSON корректен."
   },

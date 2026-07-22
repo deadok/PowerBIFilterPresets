@@ -10,11 +10,17 @@ describe("decodeContentResponse", () => {
     expect(
       decodeContentResponse(readRequest, {
         ok: true,
-        filters: [{ title: "Region", type: "list", selectedLabels: ["EMEA"] }]
+        filters: [
+          { title: "Region", type: "list", selectedLabels: ["EMEA"] },
+          { title: "Product", type: "list", selectedLabels: [], selectionMode: "none" }
+        ]
       })
     ).toEqual({
       ok: true,
-      filters: [{ title: "Region", type: "list", selectedLabels: ["EMEA"] }]
+      filters: [
+        { title: "Region", type: "list", selectedLabels: ["EMEA"] },
+        { title: "Product", type: "list", selectedLabels: [], selectionMode: "none" }
+      ]
     });
     expect(
       decodeContentResponse(applyRequest, {
@@ -59,5 +65,17 @@ describe("decodeContentResponse", () => {
       })
     ).toBeUndefined();
     expect(decodeContentResponse(readRequest, { ok: false, error: 4 })).toBeUndefined();
+    expect(
+      decodeContentResponse(readRequest, {
+        ok: true,
+        filters: [{ title: "Region", type: "list", selectedLabels: [], selectionMode: "invalid" }]
+      })
+    ).toBeUndefined();
+    expect(
+      decodeContentResponse(readRequest, {
+        ok: true,
+        filters: [{ title: "Region", type: "list", selectedLabels: ["EMEA"], selectionMode: "none" }]
+      })
+    ).toBeUndefined();
   });
 });

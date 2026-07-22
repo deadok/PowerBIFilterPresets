@@ -287,6 +287,12 @@
   "saveReviewFilterSelectedValueCountPlural": {
     "message": "$1 selected values"
   },
+  "saveReviewFilterSelectionAll": {
+    "message": "Select all"
+  },
+  "saveReviewFilterSelectionNone": {
+    "message": "None selected"
+  },
   "jsonValidationValid": {
     "message": "JSON is valid."
   },

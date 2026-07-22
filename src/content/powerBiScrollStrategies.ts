@@ -17,9 +17,18 @@ type SnapshotProvider = () => SlicerListboxSnapshot[];
 type SnapshotScanOptions = {
   snapshotProvider: SnapshotProvider;
   snapshotsSignature: (snapshots: SlicerListboxSnapshot[]) => string;
+  snapshotsTopology: (snapshots: SlicerListboxSnapshot[]) => string;
   onOptions: (options: HTMLElement[]) => void | Promise<void>;
   intervalMs: number;
   timing: PowerBiTiming;
+  deadline: number;
+  resetToStart?: boolean;
+};
+
+export type SnapshotScanResult = "complete" | "exhausted" | "pending";
+export type SnapshotScanOutcome = {
+  status: SnapshotScanResult;
+  topology: string | null;
 };
 
 const SLICER_SCROLL_RENDER_TIMEOUT_MS = 200;
@@ -36,6 +45,16 @@ export function shouldUseWheelFallback(initialOptionCount: number): boolean {
 }
 
 export function scrollElementForListbox(listbox: HTMLElement): HTMLElement {
+  const descendantScrollElements = Array.from(
+    listbox.querySelectorAll<HTMLElement>(".scroll-wrapper > .scroll-content, .scroll-content")
+  );
+  const descendantScrollElement = descendantScrollElements.find(
+    (candidate) => candidate.clientHeight > 0 && candidate.scrollHeight > candidate.clientHeight
+  );
+  if (descendantScrollElement) {
+    return descendantScrollElement;
+  }
+
   let candidate: HTMLElement | null = listbox;
 
   while (candidate && candidate !== listbox.ownerDocument.body) {
@@ -205,12 +224,14 @@ async function waitForSnapshotRender(
   snapshotsSignature: (snapshots: SlicerListboxSnapshot[]) => string,
   previousSignature: string,
   intervalMs: number,
-  timing: PowerBiTiming
+  timing: PowerBiTiming,
+  deadline: number
 ): Promise<void> {
-  const deadline = timing.now() + SLICER_SCROLL_RENDER_TIMEOUT_MS;
+  const renderDeadline = Math.min(deadline, timing.now() + SLICER_SCROLL_RENDER_TIMEOUT_MS);
 
-  while (timing.now() <= deadline) {
-    await timing.delay(intervalMs);
+  while (timing.now() < renderDeadline) {
+    const remainingMs = renderDeadline - timing.now();
+    await timing.delay(Math.min(Math.max(1, intervalMs), remainingMs));
 
     const liveSnapshots = snapshotProvider();
     const liveSignature = snapshotsSignature(liveSnapshots);
@@ -220,14 +241,43 @@ async function waitForSnapshotRender(
   }
 }
 
-export async function scanSnapshotsByWheel(options: SnapshotScanOptions): Promise<void> {
-  let stableSteps = 0;
-  let previousSignature = options.snapshotsSignature(options.snapshotProvider());
+function exhaustedSnapshotOutcome(
+  options: SnapshotScanOptions,
+  initialTopology: string,
+  topologyChanged: boolean
+): SnapshotScanOutcome {
+  const finalSnapshots = options.snapshotProvider();
+  if (finalSnapshots.length === 0) {
+    return { status: "pending", topology: null };
+  }
 
-  for (let step = 0; step < SLICER_WHEEL_SCAN_MAX_STEPS && stableSteps < SLICER_WHEEL_SCAN_STABLE_STEPS; step += 1) {
+  const finalTopology = options.snapshotsTopology(finalSnapshots);
+  return {
+    status: "exhausted",
+    topology: !topologyChanged && finalTopology === initialTopology ? finalTopology : null
+  };
+}
+
+export async function scanSnapshotsByWheel(options: SnapshotScanOptions): Promise<SnapshotScanOutcome> {
+  let stableSteps = 0;
+  const initialSnapshots = options.snapshotProvider();
+  if (initialSnapshots.length === 0) {
+    return { status: "pending", topology: null };
+  }
+  const initialTopology = options.snapshotsTopology(initialSnapshots);
+  let topologyChanged = false;
+  let previousSignature = options.snapshotsSignature(initialSnapshots);
+
+  for (
+    let step = 0;
+    step < SLICER_WHEEL_SCAN_MAX_STEPS &&
+    stableSteps < SLICER_WHEEL_SCAN_STABLE_STEPS &&
+    options.timing.now() < options.deadline;
+    step += 1
+  ) {
     const snapshotsBeforeWheel = options.snapshotProvider();
     if (snapshotsBeforeWheel.length === 0) {
-      return;
+      return { status: "pending", topology: null };
     }
 
     for (const snapshot of snapshotsBeforeWheel) {
@@ -242,10 +292,20 @@ export async function scanSnapshotsByWheel(options: SnapshotScanOptions): Promis
       options.snapshotsSignature,
       previousSignature,
       options.intervalMs,
-      options.timing
+      options.timing,
+      options.deadline
     );
 
+    if (options.timing.now() >= options.deadline) {
+      return exhaustedSnapshotOutcome(options, initialTopology, topologyChanged);
+    }
+
     const liveSnapshots = options.snapshotProvider();
+    if (liveSnapshots.length === 0) {
+      return { status: "pending", topology: null };
+    }
+    const liveTopology = options.snapshotsTopology(liveSnapshots);
+    topologyChanged ||= liveTopology !== initialTopology;
     const liveSignature = options.snapshotsSignature(liveSnapshots);
     if (liveSignature === previousSignature) {
       stableSteps += 1;
@@ -257,17 +317,53 @@ export async function scanSnapshotsByWheel(options: SnapshotScanOptions): Promis
     for (const snapshot of liveSnapshots) {
       await options.onOptions(snapshot.options.filter((option) => option.isConnected));
     }
+
+    const snapshotsAfterObservation = options.snapshotProvider();
+    if (snapshotsAfterObservation.length === 0) {
+      return { status: "pending", topology: null };
+    }
+    const topologyAfterObservation = options.snapshotsTopology(snapshotsAfterObservation);
+    if (topologyAfterObservation !== liveTopology) {
+      return { status: "pending", topology: null };
+    }
+    const signatureAfterObservation = options.snapshotsSignature(snapshotsAfterObservation);
+    if (signatureAfterObservation !== liveSignature) {
+      stableSteps = 0;
+      previousSignature = signatureAfterObservation;
+    }
   }
+
+  const finalSnapshots = options.snapshotProvider();
+  if (finalSnapshots.length === 0) {
+    return { status: "pending", topology: null };
+  }
+  const finalTopology = options.snapshotsTopology(finalSnapshots);
+  if (stableSteps >= SLICER_WHEEL_SCAN_STABLE_STEPS) {
+    return { status: "complete", topology: finalTopology };
+  }
+  return {
+    status: "exhausted",
+    topology: !topologyChanged && finalTopology === initialTopology ? finalTopology : null
+  };
 }
 
-export async function scanSnapshotsByScrollbarDrag(options: SnapshotScanOptions): Promise<void> {
+export async function scanSnapshotsByScrollbarDrag(options: SnapshotScanOptions): Promise<SnapshotScanOutcome> {
   let stableSteps = 0;
-  let previousSignature = options.snapshotsSignature(options.snapshotProvider());
-
   const initialSnapshots = options.snapshotProvider();
+  if (initialSnapshots.length === 0) {
+    return { status: "pending", topology: null };
+  }
+  const initialTopology = options.snapshotsTopology(initialSnapshots);
+  let topologyChanged = false;
+  let previousSignature = options.snapshotsSignature(initialSnapshots);
+  if (options.timing.now() >= options.deadline) {
+    return exhaustedSnapshotOutcome(options, initialTopology, topologyChanged);
+  }
   let resetToStart = false;
-  for (const snapshot of initialSnapshots) {
-    resetToStart = dragVisibleVerticalScrollbar(snapshot.listbox, "start") || resetToStart;
+  if (options.resetToStart ?? true) {
+    for (const snapshot of initialSnapshots) {
+      resetToStart = dragVisibleVerticalScrollbar(snapshot.listbox, "start") || resetToStart;
+    }
   }
 
   if (resetToStart) {
@@ -276,23 +372,43 @@ export async function scanSnapshotsByScrollbarDrag(options: SnapshotScanOptions)
       options.snapshotsSignature,
       previousSignature,
       options.intervalMs,
-      options.timing
+      options.timing,
+      options.deadline
     );
+    if (options.timing.now() >= options.deadline) {
+      return exhaustedSnapshotOutcome(options, initialTopology, topologyChanged);
+    }
     const liveSnapshots = options.snapshotProvider();
+    if (liveSnapshots.length === 0) {
+      return { status: "pending", topology: null };
+    }
+    const liveTopology = options.snapshotsTopology(liveSnapshots);
+    topologyChanged ||= liveTopology !== initialTopology;
     previousSignature = options.snapshotsSignature(liveSnapshots);
     for (const snapshot of liveSnapshots) {
       await options.onOptions(snapshot.options.filter((option) => option.isConnected));
     }
+    const snapshotsAfterObservation = options.snapshotProvider();
+    if (snapshotsAfterObservation.length === 0) {
+      return { status: "pending", topology: null };
+    }
+    const topologyAfterObservation = options.snapshotsTopology(snapshotsAfterObservation);
+    if (topologyAfterObservation !== liveTopology) {
+      return { status: "pending", topology: null };
+    }
+    previousSignature = options.snapshotsSignature(snapshotsAfterObservation);
   }
 
   for (
     let step = 0;
-    step < SLICER_SCROLLBAR_DRAG_MAX_STEPS && stableSteps < SLICER_SCROLLBAR_DRAG_STABLE_STEPS;
+    step < SLICER_SCROLLBAR_DRAG_MAX_STEPS &&
+    stableSteps < SLICER_SCROLLBAR_DRAG_STABLE_STEPS &&
+    options.timing.now() < options.deadline;
     step += 1
   ) {
     const snapshotsBeforeDrag = options.snapshotProvider();
     if (snapshotsBeforeDrag.length === 0) {
-      return;
+      return { status: "pending", topology: null };
     }
 
     let dragged = false;
@@ -301,7 +417,11 @@ export async function scanSnapshotsByScrollbarDrag(options: SnapshotScanOptions)
     }
 
     if (!dragged) {
-      return;
+      const finalTopology = options.snapshotsTopology(snapshotsBeforeDrag);
+      return {
+        status: "exhausted",
+        topology: !topologyChanged && finalTopology === initialTopology ? finalTopology : null
+      };
     }
 
     await waitForSnapshotRender(
@@ -309,10 +429,20 @@ export async function scanSnapshotsByScrollbarDrag(options: SnapshotScanOptions)
       options.snapshotsSignature,
       previousSignature,
       options.intervalMs,
-      options.timing
+      options.timing,
+      options.deadline
     );
 
+    if (options.timing.now() >= options.deadline) {
+      return exhaustedSnapshotOutcome(options, initialTopology, topologyChanged);
+    }
+
     const liveSnapshots = options.snapshotProvider();
+    if (liveSnapshots.length === 0) {
+      return { status: "pending", topology: null };
+    }
+    const liveTopology = options.snapshotsTopology(liveSnapshots);
+    topologyChanged ||= liveTopology !== initialTopology;
     const liveSignature = options.snapshotsSignature(liveSnapshots);
     if (liveSignature === previousSignature) {
       stableSteps += 1;
@@ -324,5 +454,32 @@ export async function scanSnapshotsByScrollbarDrag(options: SnapshotScanOptions)
     for (const snapshot of liveSnapshots) {
       await options.onOptions(snapshot.options.filter((option) => option.isConnected));
     }
+
+    const snapshotsAfterObservation = options.snapshotProvider();
+    if (snapshotsAfterObservation.length === 0) {
+      return { status: "pending", topology: null };
+    }
+    const topologyAfterObservation = options.snapshotsTopology(snapshotsAfterObservation);
+    if (topologyAfterObservation !== liveTopology) {
+      return { status: "pending", topology: null };
+    }
+    const signatureAfterObservation = options.snapshotsSignature(snapshotsAfterObservation);
+    if (signatureAfterObservation !== liveSignature) {
+      stableSteps = 0;
+      previousSignature = signatureAfterObservation;
+    }
   }
+
+  const finalSnapshots = options.snapshotProvider();
+  if (finalSnapshots.length === 0) {
+    return { status: "pending", topology: null };
+  }
+  const finalTopology = options.snapshotsTopology(finalSnapshots);
+  if (stableSteps >= SLICER_SCROLLBAR_DRAG_STABLE_STEPS) {
+    return { status: "complete", topology: finalTopology };
+  }
+  return {
+    status: "exhausted",
+    topology: !topologyChanged && finalTopology === initialTopology ? finalTopology : null
+  };
 }

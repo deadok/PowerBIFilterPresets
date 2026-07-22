@@ -78,6 +78,26 @@ describe("Power BI discovery helpers", () => {
     expect(externalSlicerListboxes(document, "Product")).toEqual([document.querySelector("#external")]);
   });
 
+  it("prefers combobox aria-controls association when the snapshot header and listbox labels differ", () => {
+    document.body.innerHTML = `
+      <section class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Приоритет">Приоритет</h3>
+        <div role="combobox" aria-label="priority_display" aria-controls="priority-popup"></div>
+      </section>
+      <div id="priority-popup" class="slicer-dropdown-popup">
+        <div id="controlled" class="slicerBody" role="listbox" aria-label="priority_display"></div>
+      </div>
+      <div class="slicer-dropdown-popup">
+        <div id="title-match" class="slicerBody" role="listbox" aria-label="Приоритет"></div>
+      </div>
+    `;
+    const combobox = document.querySelector<HTMLElement>('[role="combobox"]')!;
+
+    expect(externalSlicerListboxes(document, "Приоритет", combobox)).toEqual([
+      document.querySelector("#controlled")
+    ]);
+  });
+
   it("keeps localized generic combobox summaries out of captured labels", () => {
     document.body.innerHTML = `
       <section class="slicer-container" id="single">
@@ -117,6 +137,31 @@ describe("Power BI discovery helpers", () => {
       "North",
       "South"
     ]);
+  });
+
+  it("does not remove a localized first value based on multi-select position alone", () => {
+    document.body.innerHTML = `
+      <div id="single" role="listbox">
+        <div role="option" aria-selected="true" title="Premier"></div>
+      </div>
+      <div class="isMultiSelectEnabled">
+        <div id="multi" role="listbox">
+          <div role="option" aria-selected="true" title="Tout sélectionner"></div>
+          <div role="option" aria-selected="true" title="Premier"></div>
+        </div>
+      </div>
+    `;
+
+    expect(
+      selectedLabelsFromSlicerOptions(
+        Array.from(document.querySelectorAll<HTMLElement>('#single [role="option"]'))
+      )
+    ).toEqual(["Premier"]);
+    expect(
+      selectedLabelsFromSlicerOptions(
+        Array.from(document.querySelectorAll<HTMLElement>('#multi [role="option"]'))
+      )
+    ).toEqual(["Tout sélectionner", "Premier"]);
   });
 
   it("uses slicer title fallbacks in the existing order", () => {

@@ -268,7 +268,17 @@ function validateFilters(value: unknown): { valid: true; filters: FilterPresetIt
     if (!Array.isArray(filter.value.selectedLabels)) {
       return invalid(`${filterPath}.selectedLabels must be an array.`, `${filterPath}.selectedLabels`);
     }
-    if (filter.value.selectedLabels.length === 0) {
+    const selectionMode = filter.value.selectionMode;
+    if (selectionMode !== undefined && selectionMode !== "all" && selectionMode !== "none") {
+      return invalid(`${filterPath}.selectionMode must be "all" or "none".`, `${filterPath}.selectionMode`);
+    }
+    if (selectionMode !== undefined && filter.value.selectedLabels.length > 0) {
+      return invalid(
+        `${filterPath}.selectedLabels must be empty when selectionMode is set.`,
+        `${filterPath}.selectedLabels`
+      );
+    }
+    if (filter.value.selectedLabels.length === 0 && selectionMode === undefined) {
       return invalid(`${filterPath}.selectedLabels: Add at least one selected label.`, `${filterPath}.selectedLabels`);
     }
 
@@ -297,7 +307,8 @@ function validateFilters(value: unknown): { valid: true; filters: FilterPresetIt
     filters.push({
       title: title.value,
       type: "list",
-      selectedLabels
+      selectedLabels,
+      ...(selectionMode ? { selectionMode } : {})
     });
   }
 

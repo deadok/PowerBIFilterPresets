@@ -12,6 +12,15 @@ describe("decodeContentRequest", () => {
   it("decodes complete read and apply requests", () => {
     expect(decodeContentRequest(readRequest)).toEqual(readRequest);
     expect(decodeContentRequest(applyRequest)).toEqual(applyRequest);
+    expect(
+      decodeContentRequest({
+        type: "APPLY_FILTERS",
+        filters: [{ title: "Product", type: "list", selectedLabels: [], selectionMode: "all" }]
+      })
+    ).toEqual({
+      type: "APPLY_FILTERS",
+      filters: [{ title: "Product", type: "list", selectedLabels: [], selectionMode: "all" }]
+    });
   });
 
   it.each([
@@ -20,7 +29,9 @@ describe("decodeContentRequest", () => {
     { type: "UNKNOWN" },
     { type: "READ_FILTERS", filters: [] },
     { type: "APPLY_FILTERS" },
-    { type: "APPLY_FILTERS", filters: [{ title: "Region", type: "range", selectedLabels: [] }] }
+    { type: "APPLY_FILTERS", filters: [{ title: "Region", type: "range", selectedLabels: [] }] },
+    { type: "APPLY_FILTERS", filters: [{ title: "Region", type: "list", selectedLabels: [], selectionMode: "some" }] },
+    { type: "APPLY_FILTERS", filters: [{ title: "Region", type: "list", selectedLabels: ["EMEA"], selectionMode: "all" }] }
   ])("rejects malformed requests", (request) => {
     expect(decodeContentRequest(request)).toBeUndefined();
   });
