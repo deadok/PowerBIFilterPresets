@@ -63,13 +63,13 @@
     "message": "Save current filters"
   },
   "popupHelpSaveDescription": {
-    "message": "Open a Power BI report, set the filters you want, then click Save current filters. Review the captured filters and save them as a preset."
+    "message": "Open a Power BI report and set the filters you want. Clear an active slicer search before saving All values or No values, then click Save current filters. The All values and No values review rows start unchecked, so include them explicitly."
   },
   "popupHelpApplyTitle": {
     "message": "Apply a preset"
   },
   "popupHelpApplyDescription": {
-    "message": "Select a saved preset and click Apply preset. The extension tries to set the report filters to the saved values and shows any missing filters or values in the log."
+    "message": "Select a saved preset and click Apply preset. The extension clears controlled slicer search, scans the full option list, and applies saved All values or No values states without relying on Power BI's translated Select all caption. Ordinary filter titles and value labels must still match exactly. Missing filters, values, or timeouts appear in the log."
   },
   "popupHelpCopyTitle": {
     "message": "Copy JSON"
@@ -93,7 +93,7 @@
     "message": "Review filters before saving"
   },
   "popupSaveReviewDescription": {
-    "message": "Choose the active filters to include in this preset."
+    "message": "Choose the filters to include. The All values and No values rows are unchecked by default; include them explicitly when that state belongs in the preset."
   },
   "popupPresetNameLabel": {
     "message": "Preset name"
@@ -288,10 +288,10 @@
     "message": "$1 selected values"
   },
   "saveReviewFilterSelectionAll": {
-    "message": "Select all"
+    "message": "All values"
   },
   "saveReviewFilterSelectionNone": {
-    "message": "None selected"
+    "message": "No values"
   },
   "jsonValidationValid": {
     "message": "JSON is valid."

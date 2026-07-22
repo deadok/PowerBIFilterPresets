@@ -78,17 +78,28 @@ before retesting.
 
 ## Save and capture checks
 
-1. Select supported list-filter values in the report.
+1. Select supported list-filter values in the report. Include an ordinary
+   subset and, when available, multiselect slicers in global All and None states.
 2. Include values that require scrolling when the changed behavior involves
    virtualized or offscreen options.
-3. Open the extension popup and save the current filters.
-4. Review the captured filter summary before accepting it.
-5. Confirm expected supported filters and selected labels are present.
-6. Confirm unrelated controls, unsupported visuals, and unselected values are
-   not captured.
-7. If export or JSON review is part of the task, inspect the exported data
+3. If a slicer search is active, first record the searched projection. Clear
+   the search before capturing a global All or None state; a search projection
+   is not proof of the full-domain state.
+4. Open the extension popup and save the current filters.
+5. Review the captured filter summary before accepting it. Confirm the **All
+   values** and **No values** rows are present but unchecked by default, then
+   explicitly include the mode rows required by the test preset.
+6. Confirm expected supported filters and selected labels are present.
+7. Confirm unrelated controls, unsupported visuals, unselected values, and
+   values visible only in an invalid or conflicting DOM snapshot are not
+   captured.
+8. If export or JSON review is part of the task, inspect the exported data
    locally for expected selected labels, especially offscreen values, but do not
    paste preset JSON into shared notes.
+
+For a semantic multiselect state, confirm the local JSON contains
+`selectionMode: "all"` or `selectionMode: "none"` with `selectedLabels: []`.
+Do not accept a localized "Select all" display string as the saved value.
 
 Report any missing or extra captured filter with the report area, expected
 value, observed value, and whether the filter was visible, scrolled into view,
@@ -99,16 +110,48 @@ or virtualized.
 1. Start in the same report context used to save or prepare the preset.
 2. Change or clear the relevant filter values so the apply action has an
    observable effect.
-3. Apply the saved preset from the extension popup.
+3. Enter and retain a slicer search that hides at least one saved or deselected
+   value. Apply the saved preset from the extension popup and confirm the
+   controlled search is cleared and the full domain is used.
 4. Review the per-filter result summary.
-5. Confirm the final selected UI values exactly match the preset.
+5. Confirm the final selected UI values exactly match the preset, including the
+   **All values** and **No values** states.
 6. Confirm previous extra selections are cleared when the preset expects them to
    be absent.
-7. For delayed or virtualized options, confirm the extension either selects the
-   expected value after scrolling/waiting or accurately reports the missing
-   filter or value.
-8. If the report changed since the preset was captured, record expected
+7. For delayed or virtualized options, exercise an offscreen target and, when
+   possible, a popup/listbox replacement while scanning. Confirm logical
+   progress is preserved for compatible replacements and contradictory or
+   incomplete generations fail closed without partial mutation.
+8. Apply the same preset a second time without changing the report. Confirm the
+   result remains successful, the final state is unchanged, and no values are
+   toggled off or otherwise duplicated.
+9. If the report changed since the preset was captured, record expected
    successes separately from missing filters or missing values.
+
+For cross-locale validation, use a test report whose slicer title and ordinary
+value labels remain exactly the same across the locale switch. Save semantic
+All/None modes in one Power BI/Chrome locale, switch to another locale where the
+"Select all" caption is translated, reload the report, and apply the same
+preset. Only the semantic mode is caption-independent; ordinary filter titles
+and value labels still require exact matches.
+
+## Timing and result semantics
+
+Capture uses one absolute 3000 ms deadline per slicer across resolution,
+optional reopen, and scanning. Apply uses one absolute 8000 ms deadline per
+filter across resolution, search clearing, discovery, mutation, verification,
+and fallbacks. Validate the combined operation rather than treating these as
+fresh per-phase waits.
+
+Use separate scenarios to verify result semantics:
+
+- an unproven or incomplete slicer is omitted from capture;
+- a renamed/removed filter produces `missing_filter`;
+- a requested value absent from a completely scanned domain produces
+  `missing_value`;
+- a loader, virtualized list, replacement generation, or fallback that cannot
+  prove the complete domain before the deadline produces `timeout`, not
+  `missing_value` or success.
 
 The validation result should distinguish extension failures from legitimate
 report drift. A successful apply check requires the final visible Power BI state
