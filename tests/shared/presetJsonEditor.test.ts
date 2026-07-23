@@ -86,6 +86,40 @@ describe("presetJsonEditor", () => {
     });
   });
 
+  it("accepts an explicit all selection mode with no localized selected label", () => {
+    const modePreset: Preset = {
+      ...samplePreset,
+      filters: [{ title: "Region", type: "list", selectedLabels: [], selectionMode: "all" }]
+    };
+
+    const validation = validateEditPresetJson(createEditPresetDocument(modePreset), {
+      preset: modePreset,
+      authoritativeName: modePreset.name
+    });
+
+    expect(validation).toMatchObject({ valid: true, filters: modePreset.filters });
+  });
+
+  it("rejects selected labels that contradict an explicit selection mode", () => {
+    const contradictoryPreset: Preset = {
+      ...samplePreset,
+      filters: [{ title: "Region", type: "list", selectedLabels: ["North"], selectionMode: "all" }]
+    };
+
+    expect(
+      validateEditPresetJson(createEditPresetDocument(contradictoryPreset), {
+        preset: contradictoryPreset,
+        authoritativeName: contradictoryPreset.name
+      })
+    ).toEqual({
+      valid: false,
+      error: {
+        path: "preset.filters[0].selectedLabels",
+        message: "preset.filters[0].selectedLabels must be empty when selectionMode is set."
+      }
+    });
+  });
+
   it("synchronizes the name field into otherwise valid JSON", () => {
     const validation = editValidation(createEditPresetDocument(samplePreset), "Quarterly review");
 

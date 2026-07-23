@@ -4,6 +4,7 @@ import {
   externalSlicerListboxes,
   hasAllComboboxSummary,
   hasGenericMultiSelectSummary,
+  hasSlicerValueOption,
   labelForCheckbox,
   labelForSlicerOption,
   listFilterControls,
@@ -78,6 +79,92 @@ describe("Power BI discovery helpers", () => {
     expect(externalSlicerListboxes(document, "Product")).toEqual([document.querySelector("#external")]);
   });
 
+  it("prefers combobox aria-controls association when the snapshot header and listbox labels differ", () => {
+    document.body.innerHTML = `
+      <section class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Приоритет">Приоритет</h3>
+        <div role="combobox" aria-label="priority_display" aria-controls="priority-popup"></div>
+      </section>
+      <div id="priority-popup" class="slicer-dropdown-popup">
+        <div id="controlled" class="slicerBody" role="listbox" aria-label="priority_display"></div>
+      </div>
+      <div class="slicer-dropdown-popup">
+        <div id="title-match" class="slicerBody" role="listbox" aria-label="Приоритет"></div>
+      </div>
+    `;
+    const combobox = document.querySelector<HTMLElement>('[role="combobox"]')!;
+
+    expect(externalSlicerListboxes(document, "Приоритет", combobox)).toEqual([
+      document.querySelector("#controlled")
+    ]);
+  });
+
+  it("uses logical coverage metadata without treating singleton labels, positions, or tabindex as semantics", () => {
+    document.body.innerHTML = `
+      <div class="isMultiSelectEnabled">
+        <div id="one-row-viewport" role="listbox" aria-multiselectable="true">
+          <div role="option" tabindex="0" aria-setsize="3" aria-posinset="1" data-row-id="row-1" title="Premier"></div>
+        </div>
+        <div id="index-fallback-viewport" role="listbox" aria-multiselectable="true">
+          <div role="option" aria-setsize="3" data-row-index="0" data-row-id="row-1" title="Premier"></div>
+        </div>
+        <div id="single-en" role="listbox" aria-multiselectable="true">
+          <div role="option" tabindex="0" aria-setsize="1" aria-posinset="1" data-row-id="row-1" title="Select all"></div>
+        </div>
+        <div id="single-fr" role="listbox" aria-multiselectable="true">
+          <div role="option" aria-setsize="1" aria-posinset="1" data-row-id="row-1" title="Tout sélectionner"></div>
+        </div>
+        <div id="single-ru" role="listbox" aria-multiselectable="true">
+          <div role="option" aria-setsize="1" aria-posinset="1" data-row-id="row-1" title="Выбрать все"></div>
+        </div>
+        <div id="single-real" role="listbox" aria-multiselectable="true">
+          <div role="option" aria-setsize="1" aria-posinset="1" data-row-id="row-1" title="Only value"></div>
+        </div>
+        <div id="unproven" role="listbox" aria-multiselectable="true">
+          <div role="option" title="Premier"></div>
+        </div>
+        <div id="malformed-size" role="listbox" aria-multiselectable="true">
+          <div role="option" aria-setsize="many" aria-posinset="1" data-row-id="row-1" title="Premier"></div>
+        </div>
+        <div id="prefixed-size-junk" role="listbox" aria-multiselectable="true">
+          <div role="option" aria-setsize="3junk" aria-posinset="1" data-row-id="row-1" title="Premier"></div>
+        </div>
+        <div id="prefixed-position-junk" role="listbox" aria-multiselectable="true">
+          <div role="option" aria-setsize="3" aria-posinset="1junk" data-row-id="row-1" title="Premier"></div>
+        </div>
+        <div id="prefixed-index-junk" role="listbox" aria-multiselectable="true">
+          <div role="option" aria-setsize="3" data-row-index="0junk" data-row-id="row-1" title="Premier"></div>
+        </div>
+        <div id="clean-signed-metadata" role="listbox" aria-multiselectable="true">
+          <div role="option" aria-setsize="+3" aria-posinset="+1" data-row-id="row-1" title="Premier"></div>
+        </div>
+        <div id="out-of-range" role="listbox" aria-multiselectable="true">
+          <div role="option" aria-setsize="3" aria-posinset="4" data-row-id="row-4" title="Premier"></div>
+        </div>
+        <div id="missing-identity" role="listbox" aria-multiselectable="true">
+          <div role="option" aria-setsize="3" aria-posinset="1" title="Premier"></div>
+        </div>
+      </div>
+    `;
+    const options = (id: string) =>
+      Array.from(document.querySelectorAll<HTMLElement>(`#${id} [role="option"]`));
+
+    expect(hasSlicerValueOption(options("one-row-viewport"))).toBe(true);
+    expect(hasSlicerValueOption(options("index-fallback-viewport"))).toBe(true);
+    expect(hasSlicerValueOption(options("single-en"))).toBe(false);
+    expect(hasSlicerValueOption(options("single-fr"))).toBe(false);
+    expect(hasSlicerValueOption(options("single-ru"))).toBe(false);
+    expect(hasSlicerValueOption(options("single-real"))).toBe(false);
+    expect(hasSlicerValueOption(options("unproven"))).toBe(false);
+    expect(hasSlicerValueOption(options("malformed-size"))).toBe(false);
+    expect(hasSlicerValueOption(options("prefixed-size-junk"))).toBe(false);
+    expect(hasSlicerValueOption(options("prefixed-position-junk"))).toBe(false);
+    expect(hasSlicerValueOption(options("prefixed-index-junk"))).toBe(false);
+    expect(hasSlicerValueOption(options("clean-signed-metadata"))).toBe(true);
+    expect(hasSlicerValueOption(options("out-of-range"))).toBe(false);
+    expect(hasSlicerValueOption(options("missing-identity"))).toBe(false);
+  });
+
   it("keeps localized generic combobox summaries out of captured labels", () => {
     document.body.innerHTML = `
       <section class="slicer-container" id="single">
@@ -117,6 +204,31 @@ describe("Power BI discovery helpers", () => {
       "North",
       "South"
     ]);
+  });
+
+  it("does not remove a localized first value based on multi-select position alone", () => {
+    document.body.innerHTML = `
+      <div id="single" role="listbox">
+        <div role="option" aria-selected="true" title="Premier"></div>
+      </div>
+      <div class="isMultiSelectEnabled">
+        <div id="multi" role="listbox">
+          <div role="option" aria-selected="true" title="Tout sélectionner"></div>
+          <div role="option" aria-selected="true" title="Premier"></div>
+        </div>
+      </div>
+    `;
+
+    expect(
+      selectedLabelsFromSlicerOptions(
+        Array.from(document.querySelectorAll<HTMLElement>('#single [role="option"]'))
+      )
+    ).toEqual(["Premier"]);
+    expect(
+      selectedLabelsFromSlicerOptions(
+        Array.from(document.querySelectorAll<HTMLElement>('#multi [role="option"]'))
+      )
+    ).toEqual(["Tout sélectionner", "Premier"]);
   });
 
   it("uses slicer title fallbacks in the existing order", () => {

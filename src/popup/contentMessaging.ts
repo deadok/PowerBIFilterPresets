@@ -246,7 +246,7 @@ function mergeDomFiltersWithPowerBiApiState(
 
   return domFilters.map((filter) => {
     const apiFilter = apiByTitle.get(filter.title);
-    if (!apiFilter || apiFilter.selectedLabels.length <= filter.selectedLabels.length) {
+    if (filter.selectionMode || !apiFilter || apiFilter.selectedLabels.length < filter.selectedLabels.length) {
       return filter;
     }
 

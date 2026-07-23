@@ -8,8 +8,9 @@ records the product assumptions that should guide future maintenance, bug fixes,
 and validation.
 
 The extension works with local presets scoped to a normalized page URL. A preset
-captures supported filter names and selected list values from the active
-page/report context, then applies those values back to matching controls later.
+captures supported filter names and either selected list values or a proven
+semantic global All/None state from the active page/report context, then applies
+that state back to matching controls later.
 
 This is not a claim that every Power BI visual or filter type is supported.
 Maintain the distinction between supported list-style filters and unrelated
@@ -36,6 +37,23 @@ and then fall back to ARIA labels. Saved selected labels should come from the
 actual option rows or validated Power BI slicer state, not from generic
 summaries such as "Multiple selections".
 
+## Preset selection state model
+
+Ordinary subset selection is stored in `selectedLabels`. A global multiselect
+state is stored semantically and must not depend on Power BI's localized
+"Select all" row:
+
+- global All: `selectionMode: "all"` and `selectedLabels: []`;
+- global None: `selectionMode: "none"` and `selectedLabels: []`.
+
+`selectionMode` and non-empty `selectedLabels` are mutually exclusive. This
+keeps semantic All/None application independent of the translated "Select all"
+caption and prevents that display label from becoming preset data. Ordinary
+filter titles and value labels still require exact matches. In save review, the
+**All values** and **No values** rows are deliberately excluded (unchecked) by
+default. The user must explicitly include such a row when the global mode
+belongs in the preset.
+
 ## Embedded report constraints
 
 Embedded reports are not a stable static page. Reports can run inside iframes or
@@ -55,12 +73,14 @@ observable report controls and frame contents.
 ## Save and capture approach
 
 Saving starts from the active page/report context. Capture discovers supported
-list filters, identifies the selected values for each filter, and presents a
-save review before storing the preset locally for the normalized page URL.
+list filters, identifies selected values or a proven semantic global All/None
+state for each filter, and presents a save review before storing the preset
+locally for the normalized page URL.
 
 Capture needs to handle selected values that are visible, offscreen, or
-summarized by the Power BI UI. DOM capture remains primary, but available Power
-BI JS API slicer state can supplement DOM results and merge validated selected
+summarized by the Power BI UI, as well as semantic global modes. DOM capture
+remains primary, but available Power BI JS API slicer state can supplement DOM
+results and merge validated selected
 labels when virtualized or offscreen selections are missed. When a dropdown or
 slicer must be opened to inspect option rows, selected labels should be
 snapshotted before opening a different slicer because opening another control
@@ -69,9 +89,26 @@ so capture may need to force-open and rescan before trusting it.
 
 Capture must avoid unrelated controls. It should save supported list filter
 state only when it can associate a filter title with real selected labels from
-option rows or validated Power BI slicer state. Generic summaries, unrelated
-buttons, visual labels, or portal navigation controls should not become preset
-data.
+option rows or validated Power BI slicer state, or with complete full-domain
+proof of a semantic global mode. Generic summaries, unrelated buttons, visual
+labels, or portal navigation controls should not become preset data.
+
+An active slicer search is a projection of the option domain, not evidence about
+the unfiltered global state. Clear the search before capturing global All or
+None. Capture must not infer `selectionMode` from a searched or changing
+projection; it may still retain ordinary selected labels that are known from a
+valid snapshot. The absolute capture deadline is 3000 ms per slicer, created
+once and shared by option resolution, an optional forced reopen, and the scan.
+It is not a separate 3000 ms allowance for each phase. If a complete,
+authoritative capture cannot be proven before that deadline, omit that slicer
+from the captured preset rather than store partial or contradictory state.
+
+Virtualized traversal allows up to 300 ms after each wheel or scroll move for
+the rendered snapshot to change. A physical scan is complete only after at
+least 700 ms of unchanged, loader-free snapshots following the last observed
+change. These waits remain bounded by the unchanged absolute 3000 ms capture
+deadline or the shared 9000 ms apply deadline; they do not create fresh
+per-step budgets.
 
 ## Apply approach
 
@@ -86,6 +123,15 @@ clear undesired values, select desired values, and verify the final option state
 where possible. It should use robust pointer and mouse interactions for opening
 controls, wait for real option rows, and treat a list containing only "Select
 all" as not ready.
+
+Applying a dropdown or slicer clears its controlled search before discovery so
+preflight, mutation, and verification operate on the full option domain. A
+semantic All/None mode is applied structurally without depending on the
+translated "Select all" caption. Ordinary filter titles and value labels still
+require exact matches. The absolute apply deadline is 9000 ms per filter,
+created once and shared by resolution, search clearing, discovery, mutation,
+verification, and wheel or scrollbar fallbacks. No phase receives a fresh 9000
+ms budget.
 
 Per-filter results should distinguish successful application from missing
 filters, missing values, interaction failures, and timeouts. The maintained
@@ -104,6 +150,13 @@ become a missing value. Interaction failures and timeouts should stay distinct
 from missing values so maintainers can tell a report content change from a DOM
 readiness or automation problem.
 
+Capture and apply have intentionally different incomplete-state semantics. An
+unproven slicer is omitted during capture. During apply, `missing_filter` means
+that no matching filter exists, while `missing_value` is valid only
+after the full relevant option domain was proven and a requested value was not
+present. Delayed, incomplete, contradictory, or unbounded discovery must return
+`timeout`, not `missing_value` and never `applied`.
+
 Always close dropdowns after apply or error handling when possible. Avoid
 unrelated mutation: do not click through portal controls, unrelated report
 visuals, or ambiguous filters just to make progress.
@@ -120,6 +173,17 @@ exists in the DOM. Scanning may need to scroll through the list to find offscree
 values. Prefer normal `scrollTop` movement when it works, use bounded wheel
 fallbacks when it does not, and support custom scrollbar dragging where needed.
 Stop after repeated unchanged slices to avoid infinite scans.
+
+Virtualized rows can be replaced while a scan is in progress. Preserve logical
+progress and the forward scroll frontier only across compatible row generations
+with authoritative identity/position evidence. Monotonic `aria-setsize` growth
+extends the expected domain; complete coverage requires every logical position.
+When a replacement reuses positions for different identities, a stated batch is
+partially identifiable, or one batch assigns conflicting identities to the same
+position, reset the epoch and quarantine unprovable rows from caller evidence.
+A later clean generation may re-prove the full domain. Otherwise fail closed:
+do not union old and new evidence, mutate from partial proof, or convert an
+incomplete scan into a missing value.
 
 Timeouts during dropdown opening, readiness waiting, scrolling, or option search
 should be reported as timeouts. Do not convert a timeout into a false

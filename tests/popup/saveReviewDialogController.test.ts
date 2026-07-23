@@ -74,7 +74,9 @@ describe("createSaveReviewDialogController", () => {
         saveReviewFilterShowValuesLabel: "Show chosen values for $1",
         saveReviewFilterHideValuesLabel: "Hide chosen values for $1",
         saveReviewFilterSelectedValueCountSingular: "$1 selected choice",
-        saveReviewFilterSelectedValueCountPlural: "$1 selected choices"
+        saveReviewFilterSelectedValueCountPlural: "$1 selected choices",
+        saveReviewFilterSelectionAll: "Every value",
+        saveReviewFilterSelectionNone: "No values"
       } as Parameters<typeof installTestMessages>[0]
     );
   });
@@ -164,6 +166,40 @@ describe("createSaveReviewDialogController", () => {
     disclosures[0]?.click();
 
     expect(disclosures[0]?.getAttribute("aria-label")).toBe("Hide chosen values for Region");
+  });
+
+  it("shows localized all and none modes and leaves them excluded by default", () => {
+    const elements = createFixture();
+    const controller = createSaveReviewDialogController({
+      elements,
+      now: () => new Date("2026-06-16T10:00:00.000Z"),
+      randomUUID: () => "00000000-0000-0000-0000-000000000000",
+      getCollection: vi.fn(),
+      savePreset: vi.fn(),
+      openDialog: () => true,
+      closeDialog: vi.fn(),
+      renderCollection: vi.fn(),
+      renderSaved: vi.fn(),
+      errorMessage: String
+    });
+
+    controller.open([
+      { title: "Product", type: "list", selectedLabels: [], selectionMode: "all" },
+      { title: "Owner", type: "list", selectedLabels: [], selectionMode: "none" }
+    ]);
+
+    expect(Array.from(elements.reviewList.querySelectorAll(".review-filter-count"), (node) => node.textContent)).toEqual([
+      "Every value",
+      "No values"
+    ]);
+    expect(Array.from(elements.reviewList.querySelectorAll(".review-filter-values li"), (node) => node.textContent)).toEqual([
+      "Every value",
+      "No values"
+    ]);
+    expect(Array.from(elements.reviewList.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'), (input) => input.checked)).toEqual([
+      false,
+      false
+    ]);
   });
 
   it("saves included filters and restores local state after storage failure", async () => {

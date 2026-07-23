@@ -10,13 +10,18 @@ function hasOnlyKeys(value: Record<string, unknown>, keys: string[]): boolean {
 }
 
 function decodeFilter(value: unknown): FilterPresetItem | undefined {
+  const keys = isRecord(value) && value.selectionMode !== undefined
+    ? ["title", "type", "selectedLabels", "selectionMode"]
+    : ["title", "type", "selectedLabels"];
   if (
     !isRecord(value) ||
-    !hasOnlyKeys(value, ["title", "type", "selectedLabels"]) ||
+    !hasOnlyKeys(value, keys) ||
     typeof value.title !== "string" ||
     value.type !== "list" ||
     !Array.isArray(value.selectedLabels) ||
-    !value.selectedLabels.every((label) => typeof label === "string")
+    !value.selectedLabels.every((label) => typeof label === "string") ||
+    (value.selectionMode !== undefined && value.selectionMode !== "all" && value.selectionMode !== "none") ||
+    (value.selectionMode !== undefined && value.selectedLabels.length > 0)
   ) {
     return undefined;
   }
@@ -24,7 +29,8 @@ function decodeFilter(value: unknown): FilterPresetItem | undefined {
   return {
     title: value.title,
     type: "list",
-    selectedLabels: [...value.selectedLabels]
+    selectedLabels: [...value.selectedLabels],
+    ...(value.selectionMode ? { selectionMode: value.selectionMode } : {})
   };
 }
 

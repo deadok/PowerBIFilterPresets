@@ -257,6 +257,60 @@ describe("sendContentRequestToActiveTab", () => {
     );
   });
 
+  it("uses equal-sized main-world state when DOM search projection returns different labels", async () => {
+    const sendMessage = vi.fn().mockImplementation((_tabId, _request, _options, callback: (response?: unknown) => void) => {
+      callback({ ok: true, filters: [{ title: "Task type", type: "list", selectedLabels: ["Story"] }] });
+    });
+    const executeScript = vi.fn().mockResolvedValue([
+      {
+        frameId: 7,
+        result: [{ title: "Task type", type: "list", selectedLabels: ["Tech debt"] }]
+      }
+    ]);
+
+    await expect(
+      sendContentRequestToActiveTab(
+        readFiltersRequest,
+        createDependencies({
+          sendMessage,
+          executeScript
+        })
+      )
+    ).resolves.toEqual({
+      ok: true,
+      filters: [{ title: "Task type", type: "list", selectedLabels: ["Tech debt"] }]
+    });
+  });
+
+  it("does not replace an explicit DOM selection mode with main-world labels", async () => {
+    const sendMessage = vi.fn().mockImplementation((_tabId, _request, _options, callback: (response?: unknown) => void) => {
+      callback({
+        ok: true,
+        filters: [{ title: "Продукт", type: "list", selectedLabels: [], selectionMode: "all" }]
+      });
+    });
+    const executeScript = vi.fn().mockResolvedValue([
+      {
+        frameId: 7,
+        result: [{ title: "Продукт", type: "list", selectedLabels: ["Ядро персонализации"] }]
+      }
+    ]);
+
+    await expect(
+      sendContentRequestToActiveTab(readFiltersRequest, {
+        getActiveTab: async () => ({ id: 42, url: "https://portal.example/report" }),
+        findBestFrameForFilters: async () => 7,
+        sendMessage,
+        executeScript,
+        getLastError: () => undefined,
+        contentScriptFile: "assets/contentScript.js"
+      })
+    ).resolves.toEqual({
+      ok: true,
+      filters: [{ title: "Продукт", type: "list", selectedLabels: [], selectionMode: "all" }]
+    });
+  });
+
   it("rejects a success response that does not match the request type", async () => {
     const sendMessage = vi.fn().mockImplementation((_tabId, _request, _options, callback: (response?: unknown) => void) => {
       callback({ ok: true, results: [] });

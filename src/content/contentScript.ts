@@ -24,7 +24,7 @@ async function applyFilters(request: ApplyFiltersRequest): Promise<ApplyFiltersR
   const results: FilterOperationResult[] = [];
 
   for (const filter of request.filters) {
-    results.push(await adapter.applyListFilterSelection(filter.title, filter.selectedLabels));
+    results.push(await adapter.applyListFilterSelection(filter.title, filter.selectedLabels, filter.selectionMode));
   }
 
   return { ok: true, results };

@@ -14,8 +14,8 @@ export type ReviewDraft = {
 export function createReviewDraft(capturedFilters: FilterPresetItem[]): ReviewDraft {
   return {
     filters: capturedFilters.flatMap((filter, capturedIndex) =>
-      filter.selectedLabels.length > 0
-        ? [{ capturedIndex, filter, included: true, expanded: false }]
+      filter.selectedLabels.length > 0 || filter.selectionMode !== undefined
+        ? [{ capturedIndex, filter, included: filter.selectionMode === undefined, expanded: false }]
         : []
     )
   };

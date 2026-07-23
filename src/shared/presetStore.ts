@@ -66,11 +66,18 @@ function decodeFilter(value: unknown): FilterPresetItem | undefined {
   if (!Array.isArray(value.selectedLabels) || !value.selectedLabels.every(isNonEmptyString)) {
     return undefined;
   }
+  if (value.selectionMode !== undefined && value.selectionMode !== "all" && value.selectionMode !== "none") {
+    return undefined;
+  }
+  if (value.selectionMode !== undefined && value.selectedLabels.length > 0) {
+    return undefined;
+  }
 
   return {
     title: value.title,
     type: "list",
-    selectedLabels: [...value.selectedLabels]
+    selectedLabels: [...value.selectedLabels],
+    ...(value.selectionMode ? { selectionMode: value.selectionMode } : {})
   };
 }
 

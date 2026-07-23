@@ -13,7 +13,9 @@ const capturedFilters: FilterPresetItem[] = [
   { title: "Region", type: "list", selectedLabels: ["EMEA", "APAC"] },
   { title: "Empty", type: "list", selectedLabels: [] },
   { title: "Product", type: "list", selectedLabels: ["Analytics", "Platform"] },
-  { title: "Team", type: "list", selectedLabels: ["Core"] }
+  { title: "Team", type: "list", selectedLabels: ["Core"] },
+  { title: "All products", type: "list", selectedLabels: [], selectionMode: "all" },
+  { title: "No owners", type: "list", selectedLabels: [], selectionMode: "none" }
 ];
 
 describe("review draft", () => {
@@ -23,7 +25,9 @@ describe("review draft", () => {
     expect(draft.filters).toEqual([
       { capturedIndex: 0, filter: capturedFilters[0], included: true, expanded: false },
       { capturedIndex: 2, filter: capturedFilters[2], included: true, expanded: false },
-      { capturedIndex: 3, filter: capturedFilters[3], included: true, expanded: false }
+      { capturedIndex: 3, filter: capturedFilters[3], included: true, expanded: false },
+      { capturedIndex: 4, filter: capturedFilters[4], included: false, expanded: false },
+      { capturedIndex: 5, filter: capturedFilters[5], included: false, expanded: false }
     ]);
   });
 
@@ -35,7 +39,9 @@ describe("review draft", () => {
     expect(bothExpanded.filters.map(({ capturedIndex, expanded }) => ({ capturedIndex, expanded }))).toEqual([
       { capturedIndex: 0, expanded: true },
       { capturedIndex: 2, expanded: true },
-      { capturedIndex: 3, expanded: false }
+      { capturedIndex: 3, expanded: false },
+      { capturedIndex: 4, expanded: false },
+      { capturedIndex: 5, expanded: false }
     ]);
   });
 
@@ -58,8 +64,8 @@ describe("review draft", () => {
     const cleared = clearAllReviewFilters(expanded);
     const selected = selectAllReviewFilters(cleared);
 
-    expect(cleared.filters.map(({ included }) => included)).toEqual([false, false, false]);
-    expect(selected.filters.map(({ included }) => included)).toEqual([true, true, true]);
+    expect(cleared.filters.map(({ included }) => included)).toEqual([false, false, false, false, false]);
+    expect(selected.filters.map(({ included }) => included)).toEqual([true, true, true, true, true]);
     expect(cleared.filters[0]?.expanded).toBe(true);
     expect(selected.filters[0]?.expanded).toBe(true);
   });
@@ -71,6 +77,19 @@ describe("review draft", () => {
       { title: "Region", type: "list", selectedLabels: ["EMEA", "APAC"] },
       { title: "Team", type: "list", selectedLabels: ["Core"] }
     ]);
+  });
+
+  it("keeps all and none captures visible but excluded until the user chooses to save them", () => {
+    const draft = createReviewDraft(capturedFilters);
+    expect(draft.filters.slice(-2).map(({ included }) => included)).toEqual([false, false]);
+
+    const withAllIncluded = setReviewFilterIncluded(draft, 4, true);
+    expect(projectIncludedFilters(withAllIncluded).at(-1)).toEqual({
+      title: "All products",
+      type: "list",
+      selectedLabels: [],
+      selectionMode: "all"
+    });
   });
 
   it("does not mutate captured filters while draft state changes or projection is edited", () => {

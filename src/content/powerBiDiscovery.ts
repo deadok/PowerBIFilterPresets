@@ -1,3 +1,5 @@
+import { authoritativeSlicerLogicalRow } from "./powerBiLogicalRows";
+
 export type CheckboxControl = {
   kind: "checkbox";
   element: HTMLElement;
@@ -76,17 +78,37 @@ export function slicerOptions(control: SlicerControl): HTMLElement[] {
   return Array.from(control.element.querySelectorAll<HTMLElement>('[role="listbox"] [role="option"]'));
 }
 
-export function externalSlicerOptions(roots: ParentNode | ParentNode[], title: string): HTMLElement[] {
+export function externalSlicerOptions(
+  roots: ParentNode | ParentNode[],
+  title: string,
+  combobox?: HTMLElement | null
+): HTMLElement[] {
   const options: HTMLElement[] = [];
 
-  for (const listbox of externalSlicerListboxes(roots, title)) {
+  for (const listbox of externalSlicerListboxes(roots, title, combobox)) {
     options.push(...optionsInListbox(listbox));
   }
 
   return options;
 }
 
-export function externalSlicerListboxes(roots: ParentNode | ParentNode[], title: string): HTMLElement[] {
+export function externalSlicerListboxes(
+  roots: ParentNode | ParentNode[],
+  title: string,
+  combobox?: HTMLElement | null
+): HTMLElement[] {
+  const controlledListboxes = combobox?.getAttribute("aria-controls")
+    ?.trim()
+    .split(/\s+/)
+    .flatMap((id) => {
+      const popup = combobox.ownerDocument.getElementById(id);
+      const listbox = popup?.querySelector<HTMLElement>('[role="listbox"]');
+      return popup?.isConnected && listbox && isExternalSlicerDropdownListbox(listbox) ? [listbox] : [];
+    }) ?? [];
+  if (controlledListboxes.length > 0) {
+    return Array.from(new Set(controlledListboxes));
+  }
+
   const listboxes: HTMLElement[] = [];
   const seen = new Set<HTMLElement>();
 
@@ -107,6 +129,23 @@ export function externalSlicerListboxes(roots: ParentNode | ParentNode[], title:
   return listboxes;
 }
 
+export function isElementExplicitlyHidden(element: HTMLElement): boolean {
+  let current: HTMLElement | null = element;
+  while (current && current !== element.ownerDocument.body) {
+    const style = current.ownerDocument.defaultView?.getComputedStyle(current);
+    if (
+      current.hidden ||
+      current.getAttribute("aria-hidden") === "true" ||
+      style?.display === "none" ||
+      style?.visibility === "hidden"
+    ) {
+      return true;
+    }
+    current = current.parentElement;
+  }
+  return false;
+}
+
 export function isExternalSlicerDropdownListbox(listbox: HTMLElement): boolean {
   return (
     listbox.classList.contains("slicerBody") ||
@@ -115,10 +154,23 @@ export function isExternalSlicerDropdownListbox(listbox: HTMLElement): boolean {
 }
 
 export function hasSlicerValueOption(options: HTMLElement[]): boolean {
+  const listbox = options[0]?.closest<HTMLElement>('[role="listbox"]');
+  if (options.length === 1 && listbox && isMultiSelectSlicerListbox(listbox)) {
+    const logicalRow = authoritativeSlicerLogicalRow(options[0]);
+    return logicalRow !== null && logicalRow.expectedSize > 1;
+  }
+
   return options.some((option) => {
     const label = labelForSlicerOption(option);
-    return label.length > 0 && label !== "Select all";
+    return label.length > 0;
   });
+}
+
+export function isMultiSelectSlicerListbox(listbox: HTMLElement): boolean {
+  return (
+    listbox.getAttribute("aria-multiselectable") === "true" ||
+    listbox.closest(".isMultiSelectEnabled") !== null
+  );
 }
 
 export function labelForSlicerOption(option: HTMLElement): string {
