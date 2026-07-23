@@ -1,3 +1,5 @@
+import { authoritativeSlicerLogicalRow } from "./powerBiLogicalRows";
+
 export type CheckboxControl = {
   kind: "checkbox";
   element: HTMLElement;
@@ -154,12 +156,13 @@ export function isExternalSlicerDropdownListbox(listbox: HTMLElement): boolean {
 export function hasSlicerValueOption(options: HTMLElement[]): boolean {
   const listbox = options[0]?.closest<HTMLElement>('[role="listbox"]');
   if (options.length === 1 && listbox && isMultiSelectSlicerListbox(listbox)) {
-    return false;
+    const logicalRow = authoritativeSlicerLogicalRow(options[0]);
+    return logicalRow !== null && logicalRow.expectedSize > 1;
   }
 
   return options.some((option) => {
     const label = labelForSlicerOption(option);
-    return label.length > 0 && label !== "Select all";
+    return label.length > 0;
   });
 }
 

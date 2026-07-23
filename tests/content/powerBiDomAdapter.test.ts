@@ -419,6 +419,169 @@ describe("createPowerBiDomAdapter", () => {
   });
 
   it.each([
+    ["English Select all", "Select all"],
+    ["French Select all", "Tout sélectionner"],
+    ["Russian Select all", "Выбрать все"],
+    ["real value", "Only value"]
+  ] as const)("fails closed for an ambiguous setsize-one external multiselect with %s", async (_case, label) => {
+    document.body.innerHTML = `
+      <main>
+        <section class="visual customPadding visual-slicer">
+          <div class="slicer-container">
+            <h3 class="slicer-header-text" aria-label="Product" title="Product">Product</h3>
+            <div role="combobox" aria-label="Product" aria-controls="product-popup"></div>
+          </div>
+        </section>
+      </main>
+      <div id="product-popup" class="slicer-dropdown-popup">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="slicerBody" role="listbox" aria-multiselectable="true" aria-label="Product">
+            <div role="option" tabindex="0" aria-setsize="1" aria-posinset="1" data-row-id="row-1"
+              aria-selected="false" title="${label}">
+              <div class="slicerCheckbox"></div>
+              <span class="slicerText">${label}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    let clickCount = 0;
+    addDocumentListener("click", (event) => {
+      if ((event.target as Element).closest('[role="option"]')) {
+        clickCount += 1;
+      }
+    });
+    const adapter = createAdapter(document);
+
+    await expect(adapter.applyListFilterSelection("Product", [], "all")).resolves.toMatchObject({
+      title: "Product",
+      status: "timeout"
+    });
+    expect(clickCount).toBe(0);
+    expect(document.querySelector('[role="option"]')?.getAttribute("aria-selected")).toBe("false");
+    await expect(adapter.readListFilters()).resolves.toEqual([]);
+  });
+
+  it("lets an authoritative one-row viewport load the remaining logical domain during capture", async () => {
+    document.body.innerHTML = `
+      <main>
+        <section class="visual customPadding visual-slicer">
+          <div class="slicer-container">
+            <h3 class="slicer-header-text" aria-label="Product" title="Product">Product</h3>
+            <div role="combobox" aria-label="Product" aria-controls="product-popup"></div>
+          </div>
+        </section>
+      </main>
+      <div id="product-popup" class="slicer-dropdown-popup">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="slicerBody" role="listbox" aria-multiselectable="true" aria-label="Product">
+            <div class="scroll-wrapper"><div class="scroll-content">
+              <div role="option" aria-setsize="2" aria-posinset="1" data-row-id="alpha"
+                aria-selected="true" title="Alpha"></div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    `;
+    const scrollContent = document.querySelector<HTMLElement>(".scroll-content")!;
+    Object.defineProperties(scrollContent, {
+      clientHeight: { configurable: true, value: 20 },
+      scrollHeight: { configurable: true, value: 40 }
+    });
+    let loadedRemainingDomain = false;
+    scrollContent.addEventListener("scroll", () => {
+      if (scrollContent.scrollTop <= 0 || loadedRemainingDomain) {
+        return;
+      }
+      loadedRemainingDomain = true;
+      scrollContent.innerHTML = `
+        <div role="option" aria-setsize="2" aria-posinset="2" data-row-id="beta"
+          aria-selected="true" title="Beta"></div>
+      `;
+    });
+
+    await expect(createAdapter(document).readListFilters()).resolves.toEqual([
+      { title: "Product", type: "list", selectedLabels: [], selectionMode: "all" }
+    ]);
+    expect(loadedRemainingDomain).toBe(true);
+  });
+
+  it("scans but fails closed for an incomplete localized one-row viewport", async () => {
+    document.body.innerHTML = `
+      <main>
+        <section class="visual customPadding visual-slicer">
+          <div class="slicer-container">
+            <h3 class="slicer-header-text" aria-label="Product" title="Product">Product</h3>
+            <div role="combobox" aria-label="Product" aria-controls="product-popup"></div>
+          </div>
+        </section>
+      </main>
+      <div id="product-popup" class="slicer-dropdown-popup">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="slicerBody" role="listbox" aria-multiselectable="true" aria-label="Product">
+            <div class="scroll-wrapper"><div class="scroll-content">
+              <div role="option" aria-setsize="3" aria-posinset="1" data-row-id="localized-placeholder"
+                aria-selected="true" title="Tout sélectionner"></div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    `;
+    const scrollContent = document.querySelector<HTMLElement>(".scroll-content")!;
+    Object.defineProperties(scrollContent, {
+      clientHeight: { configurable: true, value: 20 },
+      scrollHeight: { configurable: true, value: 60 }
+    });
+    let scrollEvents = 0;
+    scrollContent.addEventListener("scroll", () => {
+      scrollEvents += 1;
+    });
+    const adapter = createAdapter(document);
+
+    await expect(adapter.applyListFilterSelection("Product", [], "all")).resolves.toMatchObject({
+      title: "Product",
+      status: "timeout"
+    });
+    expect(scrollEvents).toBeGreaterThan(0);
+    await expect(adapter.readListFilters()).resolves.toEqual([]);
+  });
+
+  it("does not mutate while an authoritative one-row viewport loader remains visible", async () => {
+    document.body.innerHTML = `
+      <main>
+        <section class="visual customPadding visual-slicer">
+          <div class="slicer-container">
+            <h3 class="slicer-header-text" aria-label="Product" title="Product">Product</h3>
+            <div role="combobox" aria-label="Product" aria-controls="product-popup"></div>
+          </div>
+        </section>
+      </main>
+      <div id="product-popup" class="slicer-dropdown-popup">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="slicerBody" role="listbox" aria-multiselectable="true" aria-label="Product">
+            <div role="option" aria-setsize="2" aria-posinset="1" data-row-id="alpha"
+              aria-selected="false" title="Alpha"></div>
+          </div>
+          <div class="slicer-dropdown-loader"></div>
+        </div>
+      </div>
+    `;
+    let clickCount = 0;
+    addDocumentListener("click", (event) => {
+      if ((event.target as Element).closest('[role="option"]')) {
+        clickCount += 1;
+      }
+    });
+
+    await expect(createAdapter(document).applyListFilterSelection("Product", [], "all")).resolves.toMatchObject({
+      title: "Product",
+      status: "timeout"
+    });
+    expect(clickCount).toBe(0);
+    expect(document.querySelector('[role="option"]')?.getAttribute("aria-selected")).toBe("false");
+  });
+
+  it.each([
     ["all", true],
     ["none", false]
   ] as const)("round-trips localized %s mode through a closed dropdown after the locale changes", async (selectionMode, sourceSelected) => {
@@ -3902,8 +4065,10 @@ describe("createPowerBiDomAdapter", () => {
       document.body.insertAdjacentHTML(
         "beforeend",
         `<div class="slicer-dropdown-popup visual themeableElement focused">
-          <div class="slicerBody" role="listbox" aria-label="Product">
-            ${renderOption("Select all")}
+          <div class="slicerContainer isMultiSelectEnabled">
+            <div class="slicerBody" role="listbox" aria-multiselectable="true" aria-label="Product">
+              ${renderOption("Select all")}
+            </div>
           </div>
         </div>`
       );
@@ -3966,8 +4131,10 @@ describe("createPowerBiDomAdapter", () => {
       document.body.insertAdjacentHTML(
         "beforeend",
         `<div class="slicer-dropdown-popup visual themeableElement focused">
-          <div class="slicerBody" role="listbox" aria-label="Product">
-            ${renderOption("Select all")}
+          <div class="slicerContainer isMultiSelectEnabled">
+            <div class="slicerBody" role="listbox" aria-multiselectable="true" aria-label="Product">
+              ${renderOption("Select all")}
+            </div>
           </div>
         </div>`
       );

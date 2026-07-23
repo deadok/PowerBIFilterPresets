@@ -6,6 +6,11 @@ import {
   type SlicerControl
 } from "./powerBiDiscovery";
 import {
+  slicerOptionLogicalPosition,
+  slicerOptionLogicalSetSize,
+  slicerOptionStableLogicalIdentity
+} from "./powerBiLogicalRows";
+import {
   scanSnapshotsByScrollbarDrag,
   scanSnapshotsByWheel,
   scrollElementForListbox,
@@ -148,16 +153,9 @@ function scrollPositionKey(
 }
 
 function slicerOptionLogicalIdentity(option: HTMLElement): string | null {
-  const rowId = option.getAttribute("data-row-id")?.trim();
-  if (rowId) {
-    return `row:${rowId}`;
-  }
-
-  for (const attribute of ["data-key", "data-value", "data-identity"] as const) {
-    const value = option.getAttribute(attribute)?.trim();
-    if (value) {
-      return `${attribute}:${value}`;
-    }
+  const stableIdentity = slicerOptionStableLogicalIdentity(option);
+  if (stableIdentity) {
+    return stableIdentity;
   }
 
   const label = labelForSlicerOption(option).normalize("NFKC").replace(/\s+/g, " ").trim();
@@ -166,16 +164,6 @@ function slicerOptionLogicalIdentity(option: HTMLElement): string | null {
   }
 
   return null;
-}
-
-function slicerOptionLogicalPosition(option: HTMLElement): number | null {
-  const ariaPosition = Number.parseInt(option.getAttribute("aria-posinset") ?? "", 10);
-  if (Number.isSafeInteger(ariaPosition) && ariaPosition > 0) {
-    return ariaPosition;
-  }
-
-  const rowIndex = Number.parseInt(option.getAttribute("data-row-index") ?? "", 10);
-  return Number.isSafeInteger(rowIndex) && rowIndex >= 0 ? rowIndex + 1 : null;
 }
 
 function coverageIsComplete(coverage: CoverageState): boolean {
@@ -457,8 +445,8 @@ export async function scanSlicerOptions(
       }
     }
     const statedSizes = currentOptions
-      .map((option) => Number.parseInt(option.getAttribute("aria-setsize") ?? "", 10))
-      .filter((size) => Number.isSafeInteger(size) && size > 0);
+      .map(slicerOptionLogicalSetSize)
+      .filter((size): size is number => size !== null);
     const batchExpectedSize = statedSizes.length > 0 ? Math.max(...statedSizes) : null;
     const authoritativeOptions =
       batchExpectedSize === null
