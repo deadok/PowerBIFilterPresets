@@ -31,7 +31,7 @@ export type SnapshotScanOutcome = {
   topology: string | null;
 };
 
-const SLICER_SCROLL_RENDER_TIMEOUT_MS = 200;
+const SLICER_SCROLL_RENDER_TIMEOUT_MS = 300;
 const SLICER_SCAN_MAX_SCROLL_STEPS = 160;
 const SLICER_WHEEL_SCAN_DELTA_Y = 500;
 const SLICER_WHEEL_SCAN_MAX_STEPS = 40;

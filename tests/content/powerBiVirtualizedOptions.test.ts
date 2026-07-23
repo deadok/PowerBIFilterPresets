@@ -286,7 +286,7 @@ describe("Power BI virtualized option scanning", () => {
         "Product",
         Array.from(listbox.querySelectorAll<HTMLElement>('[role="option"]')),
         (options) => options.forEach((option) => seenLabels.add(labelForSlicerOption(option))),
-        { timing: createDeterministicPowerBiTiming() }
+        { timing: createDeterministicPowerBiTiming(), deadline: 3000 }
       )
     ).resolves.toBe(true);
     expect(seenLabels).toEqual(
@@ -684,7 +684,7 @@ describe("Power BI virtualized option scanning", () => {
         "Product",
         Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')),
         () => undefined,
-        { timing: createDeterministicPowerBiTiming() }
+        { timing: createDeterministicPowerBiTiming(), deadline: 3000 }
       )
     ).resolves.toBe(true);
     expect(scrollbarMouseDowns).toBe(0);
@@ -721,6 +721,37 @@ describe("Power BI virtualized option scanning", () => {
       false
     );
     expect(delayCount).toBe(60);
+  });
+
+  it("requires 700ms of quiescent snapshots before completing a physical scan", async () => {
+    document.body.innerHTML = `
+      <section class="slicer-container">
+        <h3 class="slicer-header-text" title="Product">Product</h3>
+        <div class="slicerBody" role="listbox" aria-label="Product">
+          <div role="option" title="A"></div>
+        </div>
+      </section>
+    `;
+    const control: SlicerControl = {
+      kind: "slicer",
+      element: document.querySelector<HTMLElement>(".slicer-container")!,
+      title: "Product"
+    };
+    const option = document.querySelector<HTMLElement>('[role="option"]')!;
+    let now = 0;
+    const timing: PowerBiTiming = {
+      now: () => now,
+      async delay(ms) {
+        now += Math.max(1, ms);
+        await Promise.resolve();
+      }
+    };
+
+    await expect(scanSlicerOptions(document, control, "Product", [option], () => undefined, { timing })).resolves.toBe(
+      true
+    );
+    expect(now).toBeGreaterThanOrEqual(700);
+    expect(now).toBeLessThanOrEqual(725);
   });
 
   it("times out when identical-geometry listbox generations keep replacing each other", async () => {

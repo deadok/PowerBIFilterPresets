@@ -1004,7 +1004,7 @@ describe("createPowerBiDomAdapter", () => {
     expect(document.querySelector('[title="Beta"]')?.getAttribute("aria-selected")).toBe("true");
   });
 
-  it("waits beyond the first 200ms of unchanged snapshots for a slow ordinary label", async () => {
+  it("waits beyond the first 300ms of unchanged snapshots for a slow ordinary label", async () => {
     document.body.innerHTML = `
       <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
         <h3 class="slicer-header-text" aria-label="Product" title="Product">Product</h3>
@@ -1568,7 +1568,7 @@ describe("createPowerBiDomAdapter", () => {
       now: () => now,
       async delay(ms) {
         now += Math.max(1, ms);
-        if (now >= 6000) {
+        if (now >= 7000) {
           (document.querySelector("#queue-popup .slicer-dropdown-loader") as HTMLElement).style.display = "none";
         }
         for (const pending of pendingSelections.splice(0)) {
@@ -1591,8 +1591,8 @@ describe("createPowerBiDomAdapter", () => {
     await expect(
       createAdapterWithDefaults(document, { timing }).applyListFilterSelection("Queue", [], "all")
     ).resolves.toMatchObject({ status: "timeout" });
-    expect(now).toBeGreaterThanOrEqual(8000);
-    expect(now).toBeLessThanOrEqual(8025);
+    expect(now).toBeGreaterThanOrEqual(9000);
+    expect(now).toBeLessThanOrEqual(9025);
   });
 
   it.each([
@@ -3195,8 +3195,8 @@ describe("createPowerBiDomAdapter", () => {
       createAdapterWithDefaults(document, { timing }).applyListFilterSelection("Queue", ["Target"])
     ).resolves.toMatchObject({ status: "timeout" });
     expect(comboboxClicks).toBe(0);
-    expect(now).toBeGreaterThanOrEqual(8000);
-    expect(now).toBeLessThanOrEqual(8025);
+    expect(now).toBeGreaterThanOrEqual(9000);
+    expect(now).toBeLessThanOrEqual(9025);
   });
 
   it("counts initial wheel fallback work against the same apply budget as search resolution", async () => {
@@ -3237,8 +3237,8 @@ describe("createPowerBiDomAdapter", () => {
       createAdapterWithDefaults(document, { timing }).applyListFilterSelection("Queue", ["Target"])
     ).resolves.toMatchObject({ status: "timeout" });
     expect(rowsRendered).toBe(true);
-    expect(now).toBeGreaterThanOrEqual(8000);
-    expect(now).toBeLessThanOrEqual(8025);
+    expect(now).toBeGreaterThanOrEqual(9000);
+    expect(now).toBeLessThanOrEqual(9025);
   });
 
   it("opens the combobox instead of accepting a hidden stale aria-controlled popup", async () => {

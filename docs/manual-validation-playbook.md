@@ -138,10 +138,16 @@ and value labels still require exact matches.
 ## Timing and result semantics
 
 Capture uses one absolute 3000 ms deadline per slicer across resolution,
-optional reopen, and scanning. Apply uses one absolute 8000 ms deadline per
+optional reopen, and scanning. Apply uses one absolute 9000 ms deadline per
 filter across resolution, search clearing, discovery, mutation, verification,
 and fallbacks. Validate the combined operation rather than treating these as
 fresh per-phase waits.
+
+During virtualized scanning, each wheel or scroll move allows up to 300 ms for
+the rendered snapshot to change. Completion requires at least 700 ms of
+unchanged, loader-free snapshots after the last observed change; both waits are
+bounded by the unchanged 3000 ms capture deadline or the shared 9000 ms apply
+deadline.
 
 Use separate scenarios to verify result semantics:
 

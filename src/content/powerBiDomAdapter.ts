@@ -64,7 +64,7 @@ type CapturedSelection = Pick<FilterPresetItem, "selectedLabels" | "selectionMod
 const CAPTURE_DROPDOWN_OPTIONS_TIMEOUT_MS = 3000;
 const FILTER_CONTROL_READINESS_TIMEOUT_MS = 8000;
 // One absolute per-filter deadline shared by resolve, discovery, mutation, verification, and fallbacks.
-const APPLY_FILTER_TIMEOUT_MS = 8000;
+const APPLY_FILTER_TIMEOUT_MS = 9000;
 const DROPDOWN_OPTIONS_INTERVAL_MS = 25;
 const SLICER_SELECTION_VERIFY_TIMEOUT_MS = 250;
 const LOG_PREFIX = "[Power BI Presets]";

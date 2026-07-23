@@ -103,6 +103,13 @@ It is not a separate 3000 ms allowance for each phase. If a complete,
 authoritative capture cannot be proven before that deadline, omit that slicer
 from the captured preset rather than store partial or contradictory state.
 
+Virtualized traversal allows up to 300 ms after each wheel or scroll move for
+the rendered snapshot to change. A physical scan is complete only after at
+least 700 ms of unchanged, loader-free snapshots following the last observed
+change. These waits remain bounded by the unchanged absolute 3000 ms capture
+deadline or the shared 9000 ms apply deadline; they do not create fresh
+per-step budgets.
+
 ## Apply approach
 
 Applying a preset should use a discovery pass followed by an apply pass. The
@@ -121,9 +128,9 @@ Applying a dropdown or slicer clears its controlled search before discovery so
 preflight, mutation, and verification operate on the full option domain. A
 semantic All/None mode is applied structurally without depending on the
 translated "Select all" caption. Ordinary filter titles and value labels still
-require exact matches. The absolute apply deadline is 8000 ms per filter,
+require exact matches. The absolute apply deadline is 9000 ms per filter,
 created once and shared by resolution, search clearing, discovery, mutation,
-verification, and wheel or scrollbar fallbacks. No phase receives a fresh 8000
+verification, and wheel or scrollbar fallbacks. No phase receives a fresh 9000
 ms budget.
 
 Per-filter results should distinguish successful application from missing

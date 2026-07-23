@@ -23,9 +23,9 @@ import {
 import { defaultPowerBiTiming, type PowerBiTiming } from "./powerBiTiming";
 
 const DROPDOWN_OPTIONS_INTERVAL_MS = 25;
-const SLICER_SCROLL_RENDER_TIMEOUT_MS = 200;
+const SLICER_SCROLL_RENDER_TIMEOUT_MS = 300;
 const SLICER_SCAN_SETTLE_STABLE_STEPS = 3;
-const SLICER_SCAN_SETTLE_QUIESCENCE_MS = 600;
+const SLICER_SCAN_SETTLE_QUIESCENCE_MS = 700;
 const SLICER_SCAN_SETTLE_TIMEOUT_MS = 1500;
 
 type VisitedScrollPositions = Set<string>;
