@@ -21,11 +21,10 @@ body {
 }
 
 body.review-open {
-  width: 100vw;
-  min-width: 0;
-  max-width: 100vw;
-  height: 100vh;
-  max-height: 100vh;
+  width: var(--expanded-popup-width);
+  min-width: var(--expanded-popup-width);
+  height: var(--expanded-popup-height);
+  min-height: var(--expanded-popup-height);
   overflow: hidden;
 }
 
