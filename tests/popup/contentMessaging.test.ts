@@ -257,6 +257,47 @@ describe("sendContentRequestToActiveTab", () => {
     );
   });
 
+  it("lets complete main-world state supersede a partial active-search DOM capture", async () => {
+    const sendMessage = vi.fn().mockImplementation((_tabId, _request, _options, callback: (response?: unknown) => void) => {
+      callback({ ok: true, filters: [{ title: "Очередь", type: "list", selectedLabels: ["CMA"] }] });
+    });
+    const executeScript = vi.fn().mockResolvedValue([
+      {
+        frameId: 7,
+        result: [{ title: "Очередь", type: "list", selectedLabels: ["CMA", "Other"] }]
+      }
+    ]);
+
+    await expect(
+      sendContentRequestToActiveTab(
+        readFiltersRequest,
+        createDependencies({
+          sendMessage,
+          executeScript
+        })
+      )
+    ).resolves.toEqual({
+      ok: true,
+      filters: [{ title: "Очередь", type: "list", selectedLabels: ["CMA", "Other"] }]
+    });
+  });
+
+  it("does not append API-only slicers without a DOM-backed title key", async () => {
+    const sendMessage = vi.fn().mockImplementation((_tabId, _request, _options, callback: (response?: unknown) => void) => {
+      callback({ ok: true, filters: [] });
+    });
+    const executeScript = vi.fn().mockResolvedValue([
+      {
+        frameId: 7,
+        result: [{ title: "Очередь", type: "list", selectedLabels: ["CMA", "Other"] }]
+      }
+    ]);
+
+    await expect(
+      sendContentRequestToActiveTab(readFiltersRequest, createDependencies({ sendMessage, executeScript }))
+    ).resolves.toEqual({ ok: true, filters: [] });
+  });
+
   it("uses equal-sized main-world state when DOM search projection returns different labels", async () => {
     const sendMessage = vi.fn().mockImplementation((_tabId, _request, _options, callback: (response?: unknown) => void) => {
       callback({ ok: true, filters: [{ title: "Task type", type: "list", selectedLabels: ["Story"] }] });

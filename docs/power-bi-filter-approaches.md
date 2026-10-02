@@ -81,7 +81,10 @@ Capture needs to handle selected values that are visible, offscreen, or
 summarized by the Power BI UI, as well as semantic global modes. DOM capture
 remains primary, but available Power BI JS API slicer state can supplement DOM
 results and merge validated selected
-labels when virtualized or offscreen selections are missed. When a dropdown or
+labels when virtualized or offscreen selections are missed. API state enriches
+only filters already keyed by a DOM-backed title; API-only slicers are not
+appended because their title cannot yet be associated safely with the captured
+DOM control. When a dropdown or
 slicer must be opened to inspect option rows, selected labels should be
 snapshotted before opening a different slicer because opening another control
 can remove or replace popup DOM. Existing external popup DOM may also be stale,
@@ -97,16 +100,86 @@ An active slicer search is a projection of the option domain, not evidence about
 the unfiltered global state. Clear the search before capturing global All or
 None. Capture must not infer `selectionMode` from a searched or changing
 projection; it may still retain ordinary selected labels that are known from a
-valid snapshot. The absolute capture deadline is 3000 ms per slicer, created
+valid full-domain scan. When a correctly controlled visible dropdown has a
+nonblank search, capture snapshots the exact query, temporarily clears it, and
+notifies the host with input, change, and keyup events. Updating the DOM input
+alone does not commit Power BI's debounced application search. Capture waits for
+an attributable clear response before starting bounded traversal from the
+correctly controlled post-clear viewport, even when no loader appears. The
+top rows may remain unchanged while a loader settles and the scroll geometry or
+authoritative domain size expands. Transition proof is therefore collected at
+the original top/rest position before traversal, while scanning may continue
+afterward. Viewport churn caused by scrolling cannot establish proof. Capture
+suspends the first traversal attempt while a scoped loader triggered by the
+clear is visible, so a loader-settled top/rest transition can be observed. A
+traversal attempt begins before dispatching a native scroll, wheel event, or
+custom-scrollbar drag; it does not depend on `scrollTop` changing. Therefore
+rows swapped by an event handler while `scrollTop` remains zero cannot establish
+proof. Capture succeeds only when the scan completes and an attributable pre-scroll
+semantic/logical-domain or geometry transition was observed, then restores the exact
+query while allowing Power BI to render the searched projection again. Capture
+records that query per controlled slicer before reading any slicer, so a popup
+destroyed while an earlier slicer is inspected can still be restored exactly
+after the target is reopened. Restoration is verified against the currently
+controlled input and searched projection after rendering, and retried if Power
+BI replaces the input. A top-position projection must match the original
+normalized labels and logical metadata; an originally scrolled projection may
+return at the top only after an attributable change with the same authoritative
+domain size and scroll extent. Stable input text by itself is not restoration.
+The fact that a search was active remains sticky provenance throughout capture, so
+the resulting state is always ordinary `selectedLabels`, never
+`selectionMode`. A selected `aria-setsize="1"` row with position 1 and a stable
+identity is not proof that a previous search projection contained the full
+selection. A coherent change in the normalized label multiset or aggregate
+validated logical coverage (expected sizes and positions, compared independently
+from labels) must show that Power BI rendered the cleared domain.
+Replacing the listbox element or regenerating stable row IDs does not count if
+that semantic/logical projection is unchanged. Reordering identical labels and
+reassigning their positions also does not count. An unchanged one-row or multirow
+projection is omitted even if its input value was cleared. A title-matched
+external popup with an active search but no authoritative `aria-controls`
+ownership is also omitted.
+All capture paths require visible options, including dropdowns without a search.
+A connected hidden popup may retain an obsolete viewport and later prune it to
+its Select all row. Capture reopens the owned dropdown and scans its visible
+current domain instead of treating that hidden snapshot as ready. Selected
+evidence observed while a control was originally visible can still be retained
+under the existing consistency checks.
+Power BI can briefly mix a searched row with complete logical metadata and
+another row whose own `aria-setsize` is invalid or unknown. Logical position
+and size evidence is parsed atomically per row: the incomplete row can provide
+a provisional selected label, but it cannot create a position conflict using a
+different row's size. The whole mixed batch remains provisional and cannot
+complete logical coverage. The first coherent full-domain generation starts a
+new epoch and clears every provisional label before its rows are accepted. A
+scan reset before clear-response proof and before traversal only clears
+provisional evidence; a later coherent full-domain generation may still prove
+the capture. If a reset occurs after transition
+proof or after traversal begins, the proof is invalidated and that capture is
+omitted. Later rows in the same scan cannot reauthorize it or be combined with
+the earlier generation.
+If the unfiltered scan, loader settling, or query restoration cannot complete,
+capture omits the slicer rather than saving the projection alone. An otherwise
+ambiguous no-search single-row multiselect remains fail-closed. The absolute
+capture deadline is 9000 ms per slicer, created
 once and shared by option resolution, an optional forced reopen, and the scan.
-It is not a separate 3000 ms allowance for each phase. If a complete,
+It includes query restoration and is not a separate 9000 ms allowance for each
+phase. Capture reserves 700 ms for the keyup-driven restore response, including
+50 ms of stable, loader-free rendered evidence. This reserve applies even when
+the retained query is discovered only after opening a closed popup. It does not
+extend the deadline. If a complete,
 authoritative capture cannot be proven before that deadline, omit that slicer
 from the captured preset rather than store partial or contradictory state.
+The larger finite capture window accommodates remote domains that grow as
+scrolling loads additional pages (the observed Queue domain reaches 399 rows).
+Incomplete or inconsistent captures emit a console warning containing the
+slicer title and configured capture budget; this diagnostic does not claim
+every omission is a timeout and does not include selected values or report URLs.
 
 Virtualized traversal allows up to 300 ms after each wheel or scroll move for
 the rendered snapshot to change. A physical scan is complete only after at
 least 700 ms of unchanged, loader-free snapshots following the last observed
-change. These waits remain bounded by the unchanged absolute 3000 ms capture
+change. These waits remain bounded by the absolute 9000 ms capture
 deadline or the shared 9000 ms apply deadline; they do not create fresh
 per-step budgets.
 

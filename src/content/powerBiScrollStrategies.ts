@@ -23,6 +23,7 @@ type SnapshotScanOptions = {
   timing: PowerBiTiming;
   deadline: number;
   resetToStart?: boolean;
+  onTraversalStart?: () => void;
 };
 
 export type SnapshotScanResult = "complete" | "exhausted" | "pending";
@@ -170,7 +171,11 @@ function visibleVerticalScrollbarForListbox(
   return null;
 }
 
-function dragVisibleVerticalScrollbar(listbox: HTMLElement, direction: "start" | "end"): boolean {
+function dragVisibleVerticalScrollbar(
+  listbox: HTMLElement,
+  direction: "start" | "end",
+  onTraversalStart?: () => void
+): boolean {
   const scrollbar = visibleVerticalScrollbarForListbox(listbox);
   if (!scrollbar) {
     return false;
@@ -187,6 +192,7 @@ function dragVisibleVerticalScrollbar(listbox: HTMLElement, direction: "start" |
     return false;
   }
 
+  onTraversalStart?.();
   const document = scrollBar.ownerDocument;
   dispatchMouseDragEvent(scrollBar, document, "mousedown", clientX, startY);
 
@@ -281,6 +287,7 @@ export async function scanSnapshotsByWheel(options: SnapshotScanOptions): Promis
     }
 
     for (const snapshot of snapshotsBeforeWheel) {
+      options.onTraversalStart?.();
       dispatchWheel(snapshot.listbox, SLICER_WHEEL_SCAN_DELTA_Y);
       if (snapshot.scrollElement !== snapshot.listbox) {
         dispatchWheel(snapshot.scrollElement, SLICER_WHEEL_SCAN_DELTA_Y);
@@ -362,7 +369,8 @@ export async function scanSnapshotsByScrollbarDrag(options: SnapshotScanOptions)
   let resetToStart = false;
   if (options.resetToStart ?? true) {
     for (const snapshot of initialSnapshots) {
-      resetToStart = dragVisibleVerticalScrollbar(snapshot.listbox, "start") || resetToStart;
+      resetToStart =
+        dragVisibleVerticalScrollbar(snapshot.listbox, "start", options.onTraversalStart) || resetToStart;
     }
   }
 
@@ -413,7 +421,8 @@ export async function scanSnapshotsByScrollbarDrag(options: SnapshotScanOptions)
 
     let dragged = false;
     for (const snapshot of snapshotsBeforeDrag) {
-      dragged = dragVisibleVerticalScrollbar(snapshot.listbox, "end") || dragged;
+      dragged =
+        dragVisibleVerticalScrollbar(snapshot.listbox, "end", options.onTraversalStart) || dragged;
     }
 
     if (!dragged) {
