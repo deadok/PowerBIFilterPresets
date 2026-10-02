@@ -294,7 +294,8 @@ async function settleSlicerOptions(
   frontier: TraversalFrontier,
   deadline: number,
   visibleOnly: boolean,
-  coverageAllowsSettling: () => boolean
+  coverageAllowsSettling: () => boolean,
+  onTraversalStart?: () => void
 ): Promise<boolean> {
   let stableSteps = 0;
   let scrollPlansCompleted = true;
@@ -335,6 +336,7 @@ async function settleSlicerOptions(
           if (nextPosition > currentScrollTop) {
             frontier.lastForwardScrollTop = Math.max(frontier.lastForwardScrollTop, nextPosition);
           }
+          onTraversalStart?.();
           scrollSlicerSnapshotTo(snapshot, nextPosition);
         }
       }
@@ -389,6 +391,8 @@ export async function scanSlicerOptions(
     intervalMs?: number;
     timing?: PowerBiTiming;
     visibleOnly?: boolean;
+    onTraversalStart?: () => void;
+    canStartTraversal?: () => boolean;
   } = {}
 ): Promise<boolean> {
   const intervalMs = options.intervalMs ?? DROPDOWN_OPTIONS_INTERVAL_MS;
@@ -403,12 +407,28 @@ export async function scanSlicerOptions(
   let lastObservedGeneration: string | null = null;
   let epoch = 0;
   let unverifiableGenerationBoundary = false;
+  let provisionalMixedBatchPending = false;
+  let epochMetadataMode: "physical" | "logical" | null = null;
+  let pendingEmptyGenerationBoundary = false;
+  let traversalStarted = false;
+  const beginTraversal = (): void => {
+    if (traversalStarted) {
+      return;
+    }
+    traversalStarted = true;
+    options.onTraversalStart?.();
+  };
   const epochIdentities = new Set<string>();
   const coverageAllowsSettling = () => coverage.kind === "physical" || coverageIsComplete(coverage);
   const observeOptions = async (currentOptions: HTMLElement[]): Promise<void> => {
+    const hadObservedOptions = observedOptions;
     if (currentOptions.length > 0) {
       observedOptions = true;
+    } else if (hadObservedOptions) {
+      pendingEmptyGenerationBoundary = true;
     }
+    const followsEmptyGenerationBoundary =
+      currentOptions.length > 0 && pendingEmptyGenerationBoundary;
 
     const listbox = currentOptions[0]?.closest<HTMLElement>('[role="listbox"]');
     const observedSnapshot = listbox
@@ -429,11 +449,18 @@ export async function scanSlicerOptions(
       lastObservedGeneration = observedGeneration;
     }
 
-    const positionedRows = currentOptions.flatMap((option) => {
+    const logicalMetadata = currentOptions.map((option) => {
+      const expectedSize = slicerOptionLogicalSetSize(option);
       const position = slicerOptionLogicalPosition(option);
       const identity = slicerOptionLogicalIdentity(option);
-      return position !== null && identity !== null ? [{ option, position, identity }] : [];
+      return { option, expectedSize, position, identity };
     });
+    const positionedRows = logicalMetadata.flatMap(
+      ({ option, expectedSize, position, identity }) =>
+        expectedSize !== null && position !== null && position <= expectedSize && identity !== null
+          ? [{ option, expectedSize, position, identity }]
+          : []
+    );
     const batchIdentitiesByPosition = new Map<number, string>();
     const conflictingBatchPositions = new Set<number>();
     for (const { position, identity } of positionedRows) {
@@ -444,15 +471,24 @@ export async function scanSlicerOptions(
         batchIdentitiesByPosition.set(position, identity);
       }
     }
-    const statedSizes = currentOptions
-      .map(slicerOptionLogicalSetSize)
-      .filter((size): size is number => size !== null);
+    const statedSizes = logicalMetadata.flatMap(({ expectedSize }) =>
+      expectedSize === null ? [] : [expectedSize]
+    );
     const batchExpectedSize = statedSizes.length > 0 ? Math.max(...statedSizes) : null;
+    const hasMixedKnownAndUnknownSizes =
+      batchExpectedSize !== null && statedSizes.length !== logicalMetadata.length;
     const authoritativeOptions =
-      batchExpectedSize === null
+      batchExpectedSize === null || hasMixedKnownAndUnknownSizes
         ? currentOptions
-        : positionedRows
-            .filter(({ position }) => !conflictingBatchPositions.has(position))
+        : logicalMetadata
+            .filter(
+              ({ expectedSize, position, identity }) =>
+                expectedSize === null ||
+                (position !== null &&
+                  position <= expectedSize &&
+                  identity !== null &&
+                  !conflictingBatchPositions.has(position))
+            )
             .map(({ option }) => option);
     const currentIdentities = authoritativeOptions
       .map(slicerOptionLogicalIdentity)
@@ -461,11 +497,12 @@ export async function scanSlicerOptions(
     let epochReset = false;
     const hasUsableLogicalGenerationEvidence =
       batchExpectedSize !== null &&
-      currentOptions.length > 0 &&
-      positionedRows.length === currentOptions.length &&
+      statedSizes.length > 0 &&
+      !hasMixedKnownAndUnknownSizes &&
+      positionedRows.length === statedSizes.length &&
       conflictingBatchPositions.size === 0;
     const hasPartiallyIdentifiableLogicalBatch =
-      batchExpectedSize !== null && positionedRows.length !== currentOptions.length;
+      batchExpectedSize !== null && positionedRows.length !== statedSizes.length;
     const existingLogicalPositions =
       coverage.kind === "logical" ? Array.from(coverage.identitiesByPosition.keys()) : [];
     const batchPositions = positionedRows.map(({ position }) => position);
@@ -477,7 +514,23 @@ export async function scanSlicerOptions(
       Math.min(...batchPositions) <= Math.max(...existingLogicalPositions) + 1 &&
       Math.max(...batchPositions) >= Math.min(...existingLogicalPositions) - 1;
 
-    if (hasPartiallyIdentifiableLogicalBatch || (batchExpectedSize !== null && conflictingBatchPositions.size > 0)) {
+    const recoveredFromProvisionalMixedBatch =
+      provisionalMixedBatchPending &&
+      !hasMixedKnownAndUnknownSizes &&
+      hasUsableLogicalGenerationEvidence;
+    const acceptedMetadataMode =
+      currentOptions.length > 0 && batchExpectedSize === null
+        ? "physical" as const
+        : hasUsableLogicalGenerationEvidence
+          ? "logical" as const
+          : null;
+
+    if (
+      hasMixedKnownAndUnknownSizes ||
+      recoveredFromProvisionalMixedBatch ||
+      hasPartiallyIdentifiableLogicalBatch ||
+      (batchExpectedSize !== null && conflictingBatchPositions.size > 0)
+    ) {
       compatibleEpoch = false;
       epochReset = true;
       epoch += 1;
@@ -489,6 +542,36 @@ export async function scanSlicerOptions(
       visitedScrollPositions.clear();
       frontier.lastForwardScrollTop = 0;
       epochIdentities.clear();
+      if (hasMixedKnownAndUnknownSizes) {
+        provisionalMixedBatchPending = true;
+      } else if (recoveredFromProvisionalMixedBatch) {
+        provisionalMixedBatchPending = false;
+      }
+      epochMetadataMode = null;
+    }
+
+    const metadataModeChanged =
+      !epochReset &&
+      epochMetadataMode !== null &&
+      acceptedMetadataMode !== null &&
+      epochMetadataMode !== acceptedMetadataMode;
+    if (metadataModeChanged) {
+      const resetCrossedTrustedBoundary = traversalStarted;
+      compatibleEpoch = false;
+      epochReset = true;
+      epoch += 1;
+      coverage = acceptedMetadataMode === "logical" && batchExpectedSize !== null
+        ? { kind: "logical", expectedSize: batchExpectedSize, identitiesByPosition: new Map() }
+        : { kind: "physical", proven: false };
+      visitedScrollPositions.clear();
+      frontier.lastForwardScrollTop = 0;
+      epochIdentities.clear();
+      provisionalMixedBatchPending = false;
+      unverifiableGenerationBoundary ||= resetCrossedTrustedBoundary;
+    }
+
+    if (acceptedMetadataMode !== null) {
+      epochMetadataMode = acceptedMetadataMode;
     }
 
     if (generationChanged && !epochReset && !hasIdentityOverlap && !hasTouchingLogicalRange) {
@@ -502,7 +585,7 @@ export async function scanSlicerOptions(
       unverifiableGenerationBoundary ||= currentIdentities.length === 0;
     }
 
-    if (batchExpectedSize !== null) {
+    if (batchExpectedSize !== null && !hasMixedKnownAndUnknownSizes) {
       let logicalCoverage =
         coverage.kind === "logical"
           ? coverage
@@ -510,18 +593,23 @@ export async function scanSlicerOptions(
       coverage = logicalCoverage;
 
       const existingPositions = Array.from(logicalCoverage.identitiesByPosition.keys());
+      const expectedSizeShrank =
+        !epochReset &&
+        hasUsableLogicalGenerationEvidence &&
+        batchExpectedSize < logicalCoverage.expectedSize;
       const positionConflict = positionedRows.some(({ position, identity }) => {
         const existingIdentity = logicalCoverage.identitiesByPosition.get(position);
         return existingIdentity !== undefined && existingIdentity !== identity;
       });
       const disconnectedBatch =
-        generationChanged &&
+        (generationChanged ||
+          (followsEmptyGenerationBoundary && batchExpectedSize <= logicalCoverage.expectedSize)) &&
         existingPositions.length > 0 &&
         batchPositions.length > 0 &&
         (Math.min(...batchPositions) > Math.max(...existingPositions) + 1 ||
           Math.max(...batchPositions) < Math.min(...existingPositions) - 1);
 
-      if (positionConflict || disconnectedBatch) {
+      if (expectedSizeShrank || positionConflict || disconnectedBatch) {
         compatibleEpoch = false;
         if (!epochReset) {
           epochReset = true;
@@ -532,6 +620,7 @@ export async function scanSlicerOptions(
         visitedScrollPositions.clear();
         frontier.lastForwardScrollTop = 0;
         epochIdentities.clear();
+        unverifiableGenerationBoundary ||= traversalStarted && expectedSizeShrank;
       } else {
         logicalCoverage.expectedSize = Math.max(logicalCoverage.expectedSize, batchExpectedSize);
       }
@@ -541,6 +630,10 @@ export async function scanSlicerOptions(
           logicalCoverage.identitiesByPosition.set(position, identity);
         }
       }
+    }
+
+    if (currentOptions.length > 0) {
+      pendingEmptyGenerationBoundary = false;
     }
 
     currentIdentities.forEach((identity) => epochIdentities.add(identity));
@@ -562,6 +655,7 @@ export async function scanSlicerOptions(
       if (restoredScrollTop > 0) {
         visitedScrollPositions.add(scrollPositionKey(observedSnapshot, 0, generations));
         visitedScrollPositions.add(scrollPositionKey(observedSnapshot, restoredScrollTop, generations));
+        beginTraversal();
         scrollSlicerSnapshotTo(observedSnapshot, restoredScrollTop);
         if (observedSnapshot.listbox.isConnected) {
           const restoredOptions = optionsInListbox(observedSnapshot.listbox).filter(
@@ -593,6 +687,38 @@ export async function scanSlicerOptions(
     await observeOptions(seedOptions);
     for (const snapshot of initialListboxes) {
       await observeOptions(snapshot.options.filter((option) => option.isConnected));
+    }
+  }
+
+  if (options.onTraversalStart && timing.now() < deadline) {
+    const minimumObservationDeadline = Math.min(
+      deadline,
+      timing.now() + SLICER_SCROLL_RENDER_TIMEOUT_MS
+    );
+    let loaderWasVisible = false;
+
+    while (timing.now() < deadline) {
+      const liveSnapshots = slicerListboxSnapshots(root, control, title, { visibleOnly });
+      const loaderVisible = hasVisibleSlicerLoader(liveSnapshots);
+      loaderWasVisible ||= loaderVisible;
+      for (const snapshot of liveSnapshots) {
+        await observeOptions(snapshot.options.filter((option) => option.isConnected));
+      }
+
+      if (
+        !loaderVisible &&
+        (options.canStartTraversal
+          ? options.canStartTraversal()
+          : loaderWasVisible || timing.now() >= minimumObservationDeadline)
+      ) {
+        break;
+      }
+
+      const remainingMs = deadline - timing.now();
+      if (remainingMs <= 0) {
+        break;
+      }
+      await timing.delay(Math.min(Math.max(1, intervalMs), remainingMs));
     }
   }
 
@@ -631,6 +757,7 @@ export async function scanSlicerOptions(
         if (scrollTop > snapshot.scrollElement.scrollTop) {
           frontier.lastForwardScrollTop = Math.max(frontier.lastForwardScrollTop, scrollTop);
         }
+        beginTraversal();
         scrolled = scrollSlicerSnapshotTo(snapshot, scrollTop) || scrolled;
       }
 
@@ -683,7 +810,8 @@ export async function scanSlicerOptions(
       onOptions: observeOptions,
       intervalMs,
       timing,
-      deadline
+      deadline,
+      onTraversalStart: beginTraversal
     });
     const topologyAfterWheel = snapshotsTopology(snapshotProvider());
     if (
@@ -702,7 +830,8 @@ export async function scanSlicerOptions(
       onOptions: observeOptions,
       intervalMs,
       timing,
-      deadline
+      deadline,
+      onTraversalStart: beginTraversal
     });
     const finalTopology = snapshotsTopology(snapshotProvider());
     const outcomes = [wheelOutcome, scrollbarOutcome];
@@ -741,7 +870,8 @@ export async function scanSlicerOptions(
       frontier,
       deadline,
       visibleOnly,
-      coverageAllowsSettling
+      coverageAllowsSettling,
+      beginTraversal
     );
     completed &&= settled;
     if (settled && coverage.kind === "physical") {
@@ -763,7 +893,8 @@ export async function scanSlicerOptions(
       frontier,
       deadline,
       visibleOnly,
-      coverageAllowsSettling
+      coverageAllowsSettling,
+      beginTraversal
     );
     completed &&= settled;
     if (settled && coverage.kind === "physical") {

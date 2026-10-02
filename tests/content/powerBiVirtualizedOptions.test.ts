@@ -146,6 +146,43 @@ describe("Power BI virtualized option scanning", () => {
     ).resolves.toBe(false);
   });
 
+  it("keeps a mixed known-size and unknown-size batch provisional", async () => {
+    document.body.innerHTML = `
+      <section class="slicer-container">
+        <h3 class="slicer-header-text" title="Product">Product</h3>
+        <div class="slicerBody" role="listbox" aria-label="Product">
+          <div role="option" data-row-id="known" aria-posinset="1" aria-setsize="1" title="Known"></div>
+          <div role="option" data-row-id="provisional" aria-posinset="1" aria-setsize="-1"
+            title="Provisional"></div>
+        </div>
+      </section>
+    `;
+    const control: SlicerControl = {
+      kind: "slicer",
+      element: document.querySelector<HTMLElement>(".slicer-container")!,
+      title: "Product"
+    };
+    const listbox = document.querySelector<HTMLElement>('[role="listbox"]')!;
+    const observedLabels = new Set<string>();
+    let resetCount = 0;
+
+    await expect(
+      scanSlicerOptions(
+        document,
+        control,
+        "Product",
+        Array.from(listbox.querySelectorAll<HTMLElement>('[role="option"]')),
+        (options, observation) => {
+          options.forEach((option) => observedLabels.add(labelForSlicerOption(option)));
+          resetCount += Number(observation.reset);
+        },
+        { timing: createDeterministicPowerBiTiming() }
+      )
+    ).resolves.toBe(false);
+    expect(observedLabels).toEqual(new Set(["Known", "Provisional"]));
+    expect(resetCount).toBeGreaterThan(0);
+  });
+
   it("tracks monotonic aria-setsize growth through the final logical row", async () => {
     document.body.innerHTML = `
       <section class="slicer-container">
@@ -605,6 +642,482 @@ describe("Power BI virtualized option scanning", () => {
     ).resolves.toBe(true);
     expect(resetCount).toBeGreaterThan(0);
     expect(finalEpochLabels).toEqual(new Set(["A", "B"]));
+  });
+
+  it("starts a fresh evidence epoch when physical rows become a coherent logical domain before traversal", async () => {
+    document.body.innerHTML = `
+      <section class="slicer-container">
+        <h3 class="slicer-header-text" title="Product">Product</h3>
+        <div class="slicerBody" role="listbox" aria-label="Product">
+          <div role="option" aria-selected="true" title="Projected"></div>
+        </div>
+      </section>
+    `;
+    const control: SlicerControl = {
+      kind: "slicer",
+      element: document.querySelector<HTMLElement>(".slicer-container")!,
+      title: "Product"
+    };
+    const listbox = document.querySelector<HTMLElement>('[role="listbox"]')!;
+    let replaced = false;
+    let traversalStarted = false;
+    let resetBeforeTraversal = false;
+    const timing = createScheduledTimingForVirtualizedOptions(() => {
+      if (replaced) {
+        return;
+      }
+      replaced = true;
+      listbox.innerHTML = `
+        <div role="option" data-row-id="target" aria-posinset="1" aria-setsize="1"
+          aria-selected="true" title="Target"></div>`;
+    });
+    const selectedLabels = new Set<string>();
+    let resetCount = 0;
+
+    await expect(
+      scanSlicerOptions(
+        document,
+        control,
+        "Product",
+        Array.from(listbox.querySelectorAll<HTMLElement>('[role="option"]')),
+        (options, observation) => {
+          if (observation.reset) {
+            resetCount += 1;
+            resetBeforeTraversal ||= !traversalStarted;
+            selectedLabels.clear();
+          }
+          options
+            .filter((option) => option.getAttribute("aria-selected") === "true")
+            .forEach((option) => selectedLabels.add(labelForSlicerOption(option)));
+        },
+        {
+          timing,
+          onTraversalStart: () => {
+            traversalStarted = true;
+          }
+        }
+      )
+    ).resolves.toBe(true);
+    expect(resetCount).toBe(1);
+    expect(resetBeforeTraversal).toBe(true);
+    expect(selectedLabels).toEqual(new Set(["Target"]));
+  });
+
+  it("starts a fresh evidence epoch when incomplete logical rows become physical rows before traversal", async () => {
+    document.body.innerHTML = `
+      <section class="slicer-container">
+        <h3 class="slicer-header-text" title="Product">Product</h3>
+        <div class="slicerBody" role="listbox" aria-label="Product">
+          <div role="option" data-row-id="old" aria-posinset="1" aria-setsize="2"
+            aria-selected="true" title="Old"></div>
+        </div>
+      </section>
+    `;
+    const control: SlicerControl = {
+      kind: "slicer",
+      element: document.querySelector<HTMLElement>(".slicer-container")!,
+      title: "Product"
+    };
+    const listbox = document.querySelector<HTMLElement>('[role="listbox"]')!;
+    let replaced = false;
+    let traversalStarted = false;
+    let resetBeforeTraversal = false;
+    const timing = createScheduledTimingForVirtualizedOptions(() => {
+      if (replaced) {
+        return;
+      }
+      replaced = true;
+      listbox.innerHTML = '<div role="option" aria-selected="true" title="New"></div>';
+    });
+    const selectedLabels = new Set<string>();
+    let resetCount = 0;
+
+    await expect(
+      scanSlicerOptions(
+        document,
+        control,
+        "Product",
+        Array.from(listbox.querySelectorAll<HTMLElement>('[role="option"]')),
+        (options, observation) => {
+          if (observation.reset) {
+            resetCount += 1;
+            resetBeforeTraversal ||= !traversalStarted;
+            selectedLabels.clear();
+          }
+          options
+            .filter((option) => option.getAttribute("aria-selected") === "true")
+            .forEach((option) => selectedLabels.add(labelForSlicerOption(option)));
+        },
+        {
+          timing,
+          onTraversalStart: () => {
+            traversalStarted = true;
+          }
+        }
+      )
+    ).resolves.toBe(true);
+    expect(resetCount).toBe(1);
+    expect(resetBeforeTraversal).toBe(true);
+    expect(selectedLabels).toEqual(new Set(["New"]));
+  });
+
+  it("resets logical evidence when an empty boundary is followed by a smaller authoritative domain", async () => {
+    document.body.innerHTML = `
+      <section class="slicer-container">
+        <h3 class="slicer-header-text" title="Product">Product</h3>
+        <div class="slicerBody" role="listbox" aria-label="Product">
+          <div role="option" data-row-id="a" aria-posinset="1" aria-setsize="2"
+            aria-selected="true" title="A"></div>
+          <div role="option" data-row-id="b" aria-posinset="2" aria-setsize="2"
+            aria-selected="true" title="B"></div>
+        </div>
+      </section>
+    `;
+    const control: SlicerControl = {
+      kind: "slicer",
+      element: document.querySelector<HTMLElement>(".slicer-container")!,
+      title: "Product"
+    };
+    const listbox = document.querySelector<HTMLElement>('[role="listbox"]')!;
+    const timing = createScheduledTimingForVirtualizedOptions((delayCount) => {
+      if (delayCount === 1) {
+        listbox.innerHTML = "";
+      } else if (delayCount === 2) {
+        listbox.innerHTML = `
+          <div role="option" data-row-id="a" aria-posinset="1" aria-setsize="1"
+            aria-selected="true" title="A"></div>`;
+      }
+    });
+    const selectedLabels = new Set<string>();
+    let resetCount = 0;
+
+    await expect(
+      scanSlicerOptions(
+        document,
+        control,
+        "Product",
+        Array.from(listbox.querySelectorAll<HTMLElement>('[role="option"]')),
+        (options, observation) => {
+          if (observation.reset) {
+            resetCount += 1;
+            selectedLabels.clear();
+          }
+          options
+            .filter((option) => option.getAttribute("aria-selected") === "true")
+            .forEach((option) => selectedLabels.add(labelForSlicerOption(option)));
+        },
+        { timing, onTraversalStart: () => undefined }
+      )
+    ).resolves.toBe(true);
+    expect(resetCount).toBe(1);
+    expect(selectedLabels).toEqual(new Set(["A"]));
+  });
+
+  it("resets logical evidence on a direct authoritative expected-size shrink", async () => {
+    document.body.innerHTML = `
+      <section class="slicer-container">
+        <h3 class="slicer-header-text" title="Product">Product</h3>
+        <div class="slicerBody" role="listbox" aria-label="Product">
+          <div role="option" data-row-id="a" aria-posinset="1" aria-setsize="2"
+            aria-selected="true" title="A"></div>
+          <div role="option" data-row-id="b" aria-posinset="2" aria-setsize="2"
+            aria-selected="true" title="B"></div>
+        </div>
+      </section>
+    `;
+    const control: SlicerControl = {
+      kind: "slicer",
+      element: document.querySelector<HTMLElement>(".slicer-container")!,
+      title: "Product"
+    };
+    const listbox = document.querySelector<HTMLElement>('[role="listbox"]')!;
+    let replaced = false;
+    const timing = createScheduledTimingForVirtualizedOptions(() => {
+      if (replaced) {
+        return;
+      }
+      replaced = true;
+      listbox.innerHTML = `
+        <div role="option" data-row-id="a" aria-posinset="1" aria-setsize="1"
+          aria-selected="true" title="A"></div>`;
+    });
+    const selectedLabels = new Set<string>();
+    let resetCount = 0;
+
+    await expect(
+      scanSlicerOptions(
+        document,
+        control,
+        "Product",
+        Array.from(listbox.querySelectorAll<HTMLElement>('[role="option"]')),
+        (options, observation) => {
+          if (observation.reset) {
+            resetCount += 1;
+            selectedLabels.clear();
+          }
+          options
+            .filter((option) => option.getAttribute("aria-selected") === "true")
+            .forEach((option) => selectedLabels.add(labelForSlicerOption(option)));
+        },
+        { timing, onTraversalStart: () => undefined }
+      )
+    ).resolves.toBe(true);
+    expect(resetCount).toBe(1);
+    expect(selectedLabels).toEqual(new Set(["A"]));
+  });
+
+  it("fails closed when an authoritative expected-size shrink follows traversal", async () => {
+    document.body.innerHTML = `
+      <section class="slicer-container">
+        <h3 class="slicer-header-text" title="Product">Product</h3>
+        <div class="scroll-host">
+          <div class="slicerBody" role="listbox" aria-label="Product">
+            <div role="option" data-row-id="a" aria-posinset="1" aria-setsize="4"
+              aria-selected="true" title="A"></div>
+            <div role="option" data-row-id="b" aria-posinset="2" aria-setsize="4"
+              aria-selected="true" title="B"></div>
+          </div>
+        </div>
+      </section>
+    `;
+    const control: SlicerControl = {
+      kind: "slicer",
+      element: document.querySelector<HTMLElement>(".slicer-container")!,
+      title: "Product"
+    };
+    const scrollHost = document.querySelector<HTMLElement>(".scroll-host")!;
+    const listbox = document.querySelector<HTMLElement>('[role="listbox"]')!;
+    Object.defineProperties(scrollHost, {
+      clientHeight: { configurable: true, value: 40 },
+      scrollHeight: { configurable: true, value: 80 }
+    });
+    scrollHost.addEventListener("scroll", () => {
+      if (scrollHost.scrollTop > 0) {
+        listbox.innerHTML = `
+          <div role="option" data-row-id="a" aria-posinset="1" aria-setsize="1"
+            aria-selected="true" title="A"></div>`;
+      }
+    });
+    const selectedLabels = new Set<string>();
+    let resetCount = 0;
+
+    await expect(
+      scanSlicerOptions(
+        document,
+        control,
+        "Product",
+        Array.from(listbox.querySelectorAll<HTMLElement>('[role="option"]')),
+        (currentOptions, observation) => {
+          if (observation.reset) {
+            resetCount += 1;
+            selectedLabels.clear();
+          }
+          currentOptions
+            .filter((option) => option.getAttribute("aria-selected") === "true")
+            .forEach((option) => selectedLabels.add(labelForSlicerOption(option)));
+        },
+        { timing: createDeterministicPowerBiTiming() }
+      )
+    ).resolves.toBe(false);
+    expect(resetCount).toBe(1);
+    expect(selectedLabels).toEqual(new Set(["A"]));
+  });
+
+  it("keeps increasing logical paging compatible across a transient empty boundary", async () => {
+    const renderRows = (size: number) => Array.from(
+      { length: size },
+      (_value, index) => `<div role="option" data-row-id="row-${index + 1}"
+        aria-posinset="${index + 1}" aria-setsize="${size}" title="Row ${index + 1}"></div>`
+    ).join("");
+    document.body.innerHTML = `
+      <section class="slicer-container">
+        <h3 class="slicer-header-text" title="Product">Product</h3>
+        <div class="slicerBody" role="listbox" aria-label="Product">${renderRows(101)}</div>
+      </section>
+    `;
+    const control: SlicerControl = {
+      kind: "slicer",
+      element: document.querySelector<HTMLElement>(".slicer-container")!,
+      title: "Product"
+    };
+    const listbox = document.querySelector<HTMLElement>('[role="listbox"]')!;
+    const timing = createScheduledTimingForVirtualizedOptions((delayCount) => {
+      if (delayCount === 1) {
+        listbox.innerHTML = "";
+      } else if (delayCount === 2) {
+        listbox.innerHTML = renderRows(200);
+      }
+    });
+    let resetCount = 0;
+    const labels = new Set<string>();
+
+    await expect(
+      scanSlicerOptions(
+        document,
+        control,
+        "Product",
+        Array.from(listbox.querySelectorAll<HTMLElement>('[role="option"]')),
+        (options, observation) => {
+          resetCount += Number(observation.reset);
+          options.forEach((option) => labels.add(labelForSlicerOption(option)));
+        },
+        { timing, deadline: 3000, onTraversalStart: () => undefined }
+      )
+    ).resolves.toBe(true);
+    expect(resetCount).toBe(0);
+    expect(labels).toEqual(new Set(Array.from({ length: 200 }, (_value, index) => `Row ${index + 1}`)));
+  });
+
+  it("resets structurally complete logical rows that become physical before traversal", async () => {
+    document.body.innerHTML = `
+      <section class="slicer-container">
+        <h3 class="slicer-header-text" title="Product">Product</h3>
+        <div class="slicerBody" role="listbox" aria-label="Product">
+          <div role="option" data-row-id="old" aria-posinset="1" aria-setsize="1"
+            aria-selected="true" title="Old"></div>
+        </div>
+      </section>
+    `;
+    const control: SlicerControl = {
+      kind: "slicer",
+      element: document.querySelector<HTMLElement>(".slicer-container")!,
+      title: "Product"
+    };
+    const listbox = document.querySelector<HTMLElement>('[role="listbox"]')!;
+    let replaced = false;
+    const timing = createScheduledTimingForVirtualizedOptions(() => {
+      if (replaced) {
+        return;
+      }
+      replaced = true;
+      listbox.innerHTML = '<div role="option" aria-selected="true" title="New"></div>';
+    });
+    const selectedLabels = new Set<string>();
+    let resetCount = 0;
+
+    await expect(
+      scanSlicerOptions(
+        document,
+        control,
+        "Product",
+        Array.from(listbox.querySelectorAll<HTMLElement>('[role="option"]')),
+        (options, observation) => {
+          if (observation.reset) {
+            resetCount += 1;
+            selectedLabels.clear();
+          }
+          options
+            .filter((option) => option.getAttribute("aria-selected") === "true")
+            .forEach((option) => selectedLabels.add(labelForSlicerOption(option)));
+        },
+        { timing, onTraversalStart: () => undefined }
+      )
+    ).resolves.toBe(true);
+    expect(resetCount).toBe(1);
+    expect(selectedLabels).toEqual(new Set(["New"]));
+  });
+
+  it("fails closed when a traversed physical epoch becomes logical", async () => {
+    document.body.innerHTML = `
+      <section class="slicer-container">
+        <h3 class="slicer-header-text" title="Product">Product</h3>
+        <div class="scroll-host">
+          <div class="slicerBody" role="listbox" aria-label="Product">
+            <div role="option" aria-selected="true" title="Projected"></div>
+          </div>
+        </div>
+      </section>
+    `;
+    const control: SlicerControl = {
+      kind: "slicer",
+      element: document.querySelector<HTMLElement>(".slicer-container")!,
+      title: "Product"
+    };
+    const scrollHost = document.querySelector<HTMLElement>(".scroll-host")!;
+    const listbox = document.querySelector<HTMLElement>('[role="listbox"]')!;
+    Object.defineProperties(scrollHost, {
+      clientHeight: { configurable: true, value: 20 },
+      scrollHeight: { configurable: true, value: 40 }
+    });
+    scrollHost.addEventListener("scroll", () => {
+      if (scrollHost.scrollTop > 0) {
+        listbox.innerHTML = `
+          <div role="option" data-row-id="target" aria-posinset="1" aria-setsize="1"
+            aria-selected="true" title="Target"></div>`;
+      }
+    });
+    const selectedLabels = new Set<string>();
+    let resetCount = 0;
+
+    await expect(
+      scanSlicerOptions(
+        document,
+        control,
+        "Product",
+        Array.from(listbox.querySelectorAll<HTMLElement>('[role="option"]')),
+        (options, observation) => {
+          if (observation.reset) {
+            resetCount += 1;
+            selectedLabels.clear();
+          }
+          options
+            .filter((option) => option.getAttribute("aria-selected") === "true")
+            .forEach((option) => selectedLabels.add(labelForSlicerOption(option)));
+        },
+        { timing: createDeterministicPowerBiTiming() }
+      )
+    ).resolves.toBe(false);
+    expect(resetCount).toBe(1);
+    expect(selectedLabels).toEqual(new Set(["Target"]));
+  });
+
+  it("keeps repeated all-unknown windows in one physical evidence epoch", async () => {
+    document.body.innerHTML = `
+      <section class="slicer-container">
+        <h3 class="slicer-header-text" title="Product">Product</h3>
+        <div class="scroll-host">
+          <div class="slicerBody" role="listbox" aria-label="Product">
+            <div role="option" aria-selected="true" title="Projected"></div>
+          </div>
+        </div>
+      </section>
+    `;
+    const control: SlicerControl = {
+      kind: "slicer",
+      element: document.querySelector<HTMLElement>(".slicer-container")!,
+      title: "Product"
+    };
+    const scrollHost = document.querySelector<HTMLElement>(".scroll-host")!;
+    const listbox = document.querySelector<HTMLElement>('[role="listbox"]')!;
+    Object.defineProperties(scrollHost, {
+      clientHeight: { configurable: true, value: 20 },
+      scrollHeight: { configurable: true, value: 40 }
+    });
+    scrollHost.addEventListener("scroll", () => {
+      if (scrollHost.scrollTop > 0) {
+        listbox.innerHTML = '<div role="option" aria-selected="true" title="Target"></div>';
+      }
+    });
+    const selectedLabels = new Set<string>();
+    let resetCount = 0;
+
+    await expect(
+      scanSlicerOptions(
+        document,
+        control,
+        "Product",
+        Array.from(listbox.querySelectorAll<HTMLElement>('[role="option"]')),
+        (options, observation) => {
+          resetCount += Number(observation.reset);
+          options
+            .filter((option) => option.getAttribute("aria-selected") === "true")
+            .forEach((option) => selectedLabels.add(labelForSlicerOption(option)));
+        },
+        { timing: createDeterministicPowerBiTiming() }
+      )
+    ).resolves.toBe(true);
+    expect(resetCount).toBe(0);
+    expect(selectedLabels).toEqual(new Set(["Projected", "Target"]));
   });
 
   it("keeps a stable data key identity when selection decoration changes the label", async () => {

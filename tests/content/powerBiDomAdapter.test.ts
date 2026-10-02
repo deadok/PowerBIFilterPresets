@@ -15,6 +15,20 @@ describe("createPowerBiDomAdapter", () => {
   const createAdapter = (root: ParentNode = document, options: { realTime?: boolean } = {}) =>
     createAdapterWithDefaults(root, options.realTime ? {} : { timing: createDeterministicPowerBiTiming() });
 
+  // Clear-transition fixtures supply their own full-domain renderer. Model the
+  // symmetric host render on restoration too, rather than only updating text.
+  // The debounced application-query tests model both directions independently.
+  const modelSearchProjectionRestore = (input: HTMLInputElement) => {
+    const container = input.closest<HTMLElement>(".slicerContainer")!;
+    const originalProjection = container.querySelector<HTMLElement>('[role="listbox"]')!.innerHTML;
+    const originalQuery = input.value;
+    container.addEventListener("keyup", (event) => {
+      if (event.target instanceof HTMLInputElement && event.target.value === originalQuery) {
+        container.querySelector<HTMLElement>('[role="listbox"]')!.innerHTML = originalProjection;
+      }
+    });
+  };
+
   const addDocumentListener = <K extends keyof DocumentEventMap>(
     type: K,
     listener: (this: Document, event: DocumentEventMap[K]) => void,
@@ -51,6 +65,7 @@ describe("createPowerBiDomAdapter", () => {
 
   const renderBottomPagedSlicer = (options: {
     append?: boolean;
+    emptyWhileLoading?: boolean;
     title: string;
     pages: string[][];
     initiallySelected: string[];
@@ -118,6 +133,9 @@ describe("createPowerBiDomAdapter", () => {
       }
       pendingPageDelays = 1;
       (slicerRoot.querySelector(".slicer-dropdown-loader") as HTMLElement).style.display = "block";
+      if (options.emptyWhileLoading) {
+        scrollElement.innerHTML = "";
+      }
     };
     const attachScrollableGeneration = (nextListbox: HTMLElement, scrollTop: number) => {
       listbox = nextListbox;
@@ -1121,6 +1139,7 @@ describe("createPowerBiDomAdapter", () => {
   it("applies the delayed bottom-paged Queue and Team preset completely and idempotently", async () => {
     const queueFixture = renderBottomPagedSlicer({
       title: "Queue",
+      emptyWhileLoading: true,
       pages: [
         ["Queue 1", "Queue 2"],
         ["Queue 3", "Queue 4"],
@@ -1134,6 +1153,7 @@ describe("createPowerBiDomAdapter", () => {
     const teamFixture = renderBottomPagedSlicer({
       append: true,
       title: "Team",
+      emptyWhileLoading: true,
       pages: [
         ["Red Team", "Blue Team"],
         ["Yellow Team", "Orange Team"],
@@ -2101,7 +2121,7 @@ describe("createPowerBiDomAdapter", () => {
     ]);
   });
 
-  it("preserves selected dropdown values hidden by an active text filter while saving", async () => {
+  it("omits an uncontrolled title-matched popup with an active text filter", async () => {
     document.body.innerHTML = `
       <main>
         <section class="visual customPadding visual-slicer">
@@ -2155,16 +2175,14 @@ describe("createPowerBiDomAdapter", () => {
 
     const adapter = createAdapter(document, { realTime: true });
 
-    await expect(adapter.readListFilters()).resolves.toEqual([
-      { title: "Task type", type: "list", selectedLabels: ["Story", "Tech debt"] }
-    ]);
+    await expect(adapter.readListFilters()).resolves.toEqual([]);
   });
 
   it.each([
-    ["selected", [true, true], ["Story", "Substory"]],
-    ["unselected", [false, false], []],
-    ["mixed", [true, false], ["Story"]]
-  ] as const)("keeps active-search %s results as ordinary selected labels", async (_state, selectedStates, expectedLabels) => {
+    ["selected", [true, true]],
+    ["unselected", [false, false]],
+    ["mixed", [true, false]]
+  ] as const)("omits uncontrolled active-search %s results", async (_state, selectedStates) => {
     document.body.innerHTML = `
       <main>
         <section class="visual customPadding visual-slicer">
@@ -2196,9 +2214,1893 @@ describe("createPowerBiDomAdapter", () => {
     `;
     document.querySelector<HTMLInputElement>(".searchHeader.show input.searchInput")!.value = "Sto";
 
+    await expect(createAdapter(document).readListFilters()).resolves.toEqual([]);
+  });
+
+  it("captures the observed single selected active-search result as an ordinary label", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+        <div role="combobox" aria-label="queue_key" aria-controls="queue-popup"></div>
+      </div></section></main>
+      <div id="queue-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div class="slicerBody" role="listbox" aria-multiselectable="true" aria-label="queue_key">
+            <div class="slicerItemContainer" tabindex="0" role="option" aria-setsize="1"
+              aria-posinset="1" data-row-index="1" data-row-id="0:1" aria-selected="true" title="CMA">
+              <div class="slicerCheckbox selected" aria-hidden="true"></div>
+              <span class="slicerText">CMA</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    const searchInput = document.querySelector<HTMLInputElement>("#queue-popup input.searchInput")!;
+    searchInput.value = "cma";
+    modelSearchProjectionRestore(searchInput);
+    let cleared = false;
+    searchInput.addEventListener("input", () => {
+      cleared ||= searchInput.value === "";
+      if (searchInput.value === "") {
+        const listbox = document.querySelector<HTMLElement>("#queue-popup [role=listbox]")!;
+        listbox.innerHTML = `
+          <div role="option" aria-setsize="2" aria-posinset="1" data-row-id="0:1"
+            aria-selected="true" title="CMA"></div>
+          <div role="option" aria-setsize="2" aria-posinset="2" data-row-id="0:2"
+            aria-selected="false" title="Other"></div>`;
+      }
+    });
+
     await expect(createAdapter(document).readListFilters()).resolves.toEqual([
-      { title: "Task type", type: "list", selectedLabels: expectedLabels }
+      { title: "Очередь", type: "list", selectedLabels: ["CMA"] }
     ]);
+    expect(cleared).toBe(true);
+    expect(searchInput.value).toBe("cma");
+  });
+
+  it.each<{
+    query: string;
+    closed: boolean;
+    virtualized?: boolean;
+    clearDelay?: number;
+    ignoreRestore?: boolean;
+    initiallyScrolled?: boolean;
+    apply?: boolean;
+    growing?: boolean;
+    pageDelayMs?: number;
+  }>([
+    { query: "cma", closed: false },
+    { query: "CMA", closed: false },
+    { query: "C", closed: false },
+    { query: "no-match", closed: false },
+    { query: "no-match-empty", closed: false },
+    { query: "cma", closed: true },
+    { query: "cma", closed: false, virtualized: true },
+    { query: "C", closed: false, virtualized: true, initiallyScrolled: true },
+    { query: "cma", closed: true, clearDelay: 8000 },
+    { query: "cma", closed: false, ignoreRestore: true },
+    { query: "cma", closed: false, apply: true },
+    { query: "cma", closed: false, virtualized: true, growing: true },
+    { query: "cma", closed: true, virtualized: true, growing: true, pageDelayMs: 9000 }
+  ])("synchronizes the application search when input/change alone do not update it ($query, closed=$closed, virtualized=$virtualized, clearDelay=$clearDelay, ignoreRestore=$ignoreRestore, initiallyScrolled=$initiallyScrolled, apply=$apply, growing=$growing, pageDelayMs=$pageDelayMs)", async ({ query, closed, virtualized = false, clearDelay = 650, ignoreRestore = false, initiallyScrolled = false, apply = false, growing = false, pageDelayMs = 600 }) => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+        <div role="combobox" aria-label="queue_key" aria-controls="queue-popup"></div>
+      </div></section></main>
+      <div id="queue-popup" class="slicer-dropdown-popup" style="display: ${closed ? "none" : "block"}">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input class="searchInput" /></div>
+          <div role="listbox" aria-multiselectable="true" aria-label="queue_key"><div class="scroll-content"></div></div>
+          <div class="slicer-dropdown-loader" style="display:none"></div>
+        </div>
+      </div>
+    `;
+    const popup = document.querySelector<HTMLElement>("#queue-popup")!;
+    const input = popup.querySelector<HTMLInputElement>("input")!;
+    const listbox = popup.querySelector<HTMLElement>('[role="listbox"]')!;
+    const scrollContent = listbox.querySelector<HTMLElement>(".scroll-content")!;
+    const loader = popup.querySelector<HTMLElement>(".slicer-dropdown-loader")!;
+    const labels = virtualized
+      ? ["AAA", "CMA", ...Array.from({ length: growing ? 396 : 98 }, (_, index) => `C Value ${index}`), "Other"]
+      : ["AAA", "CMA", "CCC", "Other"];
+    const selected = new Set(["CMA", "Other"]);
+    let applicationQuery = query;
+    let pendingQuery: string | null = null;
+    let renderAt = 0;
+    let now = 0;
+    let prematureTraversal = false;
+    const scannedLabels = new Set<string>();
+    const acknowledgedQueries: string[] = [];
+    let loadedSize = growing ? 101 : labels.length;
+    const observedDomainSizes = [loadedSize];
+    let growAt: number | null = null;
+    const projectedLabels = () => applicationQuery === ""
+      ? labels.slice(0, loadedSize)
+      : applicationQuery === "no-match-empty" ? []
+        : applicationQuery === "C" ? labels.filter((label) => label.startsWith("C")) : ["CMA"];
+    Object.defineProperties(scrollContent, {
+      clientHeight: { configurable: true, value: virtualized ? 200 : 0 },
+      scrollHeight: { configurable: true, get: () => virtualized ? projectedLabels().length * 20 : 0 }
+    });
+    const render = () => {
+      const projected = projectedLabels();
+      const start = virtualized ? Math.floor(scrollContent.scrollTop / 20) : 0;
+      const visible = virtualized ? projected.slice(start, start + 10) : projected;
+      const expectedSize = applicationQuery === "no-match" ? -1 : projected.length;
+      if (applicationQuery === "") {
+        visible.forEach((label) => scannedLabels.add(label));
+      }
+      scrollContent.innerHTML = visible.map((label, index) => `
+        <div role="option" aria-setsize="${expectedSize}" aria-posinset="${start + index + 1}"
+          data-row-id="${label}" aria-selected="${selected.has(label)}" title="${label}"></div>
+      `).join("");
+    };
+    input.value = applicationQuery;
+    scrollContent.scrollTop = initiallyScrolled ? 20 : 0;
+    render();
+    // This models the host's separate search state: DOM input mutations and
+    // input/change events alone do not commit a new application query.
+    input.addEventListener("keyup", () => {
+      if (ignoreRestore && input.value !== "") {
+        return;
+      }
+      pendingQuery = input.value;
+      renderAt = now + (pendingQuery === "" ? clearDelay : 550);
+    });
+    scrollContent.addEventListener("scroll", () => {
+      prematureTraversal ||= applicationQuery !== "";
+      if (growing && applicationQuery === "" && loadedSize < labels.length && growAt === null &&
+        scrollContent.scrollTop >= scrollContent.scrollHeight - scrollContent.clientHeight) {
+        growAt = now + pageDelayMs;
+        loader.style.display = "block";
+      }
+      render();
+    });
+    let prematureMutation = false;
+    scrollContent.addEventListener("click", (event) => {
+      const row = (event.target as HTMLElement).closest<HTMLElement>('[role="option"]');
+      const label = row?.getAttribute("title");
+      if (!label) {
+        return;
+      }
+      prematureMutation ||= applicationQuery !== "";
+      if (selected.has(label)) selected.delete(label);
+      else selected.add(label);
+      render();
+    });
+    document.querySelector<HTMLElement>('[role="combobox"]')!.addEventListener("click", () => {
+      popup.style.display = popup.style.display === "none" ? "block" : "none";
+    });
+    const timing: PowerBiTiming = {
+      now: () => now,
+      async delay(ms) {
+        now += Math.max(1, ms);
+        if (pendingQuery !== null && now >= renderAt) {
+          applicationQuery = pendingQuery;
+          acknowledgedQueries.push(applicationQuery);
+          pendingQuery = null;
+          if (applicationQuery !== "") {
+            growAt = null;
+            loader.style.display = "none";
+          }
+          scrollContent.scrollTop = 0;
+          render();
+        }
+        if (growAt !== null && now >= growAt) {
+          growAt = null;
+          loadedSize = Math.min(labels.length, loadedSize + (loadedSize === 299 ? 100 : 99));
+          observedDomainSizes.push(loadedSize);
+          loader.style.display = "none";
+          render();
+        }
+        await Promise.resolve();
+      }
+    };
+
+    if (apply) {
+      await expect(createAdapterWithDefaults(document, { timing })
+        .applyListFilterSelection("Очередь", ["Other"]))
+        .resolves.toMatchObject({ status: "applied" });
+      expect(selected).toEqual(new Set(["Other"]));
+      expect(prematureMutation).toBe(false);
+      expect(applicationQuery).toBe("");
+      expect(acknowledgedQueries).toEqual([""]);
+      expect(now).toBeLessThanOrEqual(9000);
+      return;
+    }
+
+    const expected = clearDelay > 1000 || ignoreRestore || pageDelayMs >= 9000 ? [] : [
+      { title: "Очередь", type: "list", selectedLabels: ["CMA", "Other"] }
+    ];
+    await expect(createAdapterWithDefaults(document, { timing }).readListFilters()).resolves.toEqual(expected);
+    expect(acknowledgedQueries).toEqual(ignoreRestore ? [""] : ["", query]);
+    expect(input.value).toBe(query);
+    expect(applicationQuery).toBe(ignoreRestore ? "" : query);
+    expect(Array.from(listbox.querySelectorAll('[role="option"]')).map((row) => row.getAttribute("title")))
+      .toEqual(ignoreRestore ? labels : virtualized ? projectedLabels().slice(0, 10) : projectedLabels());
+    expect(prematureTraversal).toBe(false);
+    if (virtualized) {
+      expect(scannedLabels.size).toBe(growing && pageDelayMs < 9000 ? 399 : 101);
+    }
+    if (growing) {
+      expect(observedDomainSizes).toEqual(pageDelayMs >= 9000 ? [101] : [101, 200, 299, 399]);
+      expect(now).toBeGreaterThan(3000);
+    }
+    expect(popup.style.display).toBe(closed ? "none" : "block");
+    expect(now).toBeLessThanOrEqual(growing || ignoreRestore || clearDelay > 1000 ? 9000 : 3000);
+  });
+
+  it("omits an unchanged searched singleton after clearing its controlled query", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+        <div role="combobox" aria-label="queue_key" aria-controls="queue-popup"></div>
+      </div></section></main>
+      <div id="queue-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div role="listbox" aria-multiselectable="true" aria-label="queue_key">
+            <div role="option" aria-setsize="1" aria-posinset="1" data-row-id="cma"
+              aria-selected="true" title="CMA"></div>
+          </div>
+        </div>
+      </div>
+    `;
+    const input = document.querySelector<HTMLInputElement>("#queue-popup input.searchInput")!;
+    input.value = "cma";
+
+    await expect(createAdapter(document).readListFilters()).resolves.toEqual([]);
+    expect(console.warn).toHaveBeenCalledWith(
+      "[Power BI Presets]",
+      "Filter was omitted because complete capture could not be verified",
+      { title: "Очередь", captureTimeoutMs: 9000 }
+    );
+    expect(input.value).toBe("cma");
+  });
+
+  it("omits an identical searched projection when clearing replaces only the listbox element", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+        <div role="combobox" aria-label="queue_key" aria-controls="queue-popup"></div>
+      </div></section></main>
+      <div id="queue-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div role="listbox" aria-multiselectable="true" aria-label="queue_key">
+            <div role="option" aria-setsize="1" aria-posinset="1" data-row-id="cma"
+              aria-selected="true" title="CMA"></div>
+          </div>
+        </div>
+      </div>
+    `;
+    const input = document.querySelector<HTMLInputElement>("#queue-popup input.searchInput")!;
+    input.value = "cma";
+    input.addEventListener("input", () => {
+      if (input.value === "") {
+        const listbox = document.querySelector<HTMLElement>("#queue-popup [role=listbox]")!;
+        listbox.replaceWith(listbox.cloneNode(true));
+      }
+    });
+
+    await expect(createAdapter(document).readListFilters()).resolves.toEqual([]);
+    expect(input.value).toBe("cma");
+  });
+
+  it("omits a searched projection when only stable row identities are regenerated", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Команда" title="Команда">Команда</h3>
+        <div role="combobox" aria-label="team_key" aria-controls="team-popup"></div>
+      </div></section></main>
+      <div id="team-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div role="listbox" aria-multiselectable="true" aria-label="team_key">
+            <div role="option" aria-setsize="2" aria-posinset="1" data-row-id="old-green"
+              aria-selected="true" title="Green Team"></div>
+            <div role="option" aria-setsize="2" aria-posinset="2" data-row-id="old-red"
+              aria-selected="false" title="Red Team"></div>
+          </div>
+        </div>
+      </div>
+    `;
+    const input = document.querySelector<HTMLInputElement>("#team-popup input.searchInput")!;
+    input.value = "team";
+    input.addEventListener("input", () => {
+      if (input.value !== "") {
+        return;
+      }
+      const listbox = document.querySelector<HTMLElement>("#team-popup [role=listbox]")!;
+      listbox.innerHTML = `
+        <div role="option" aria-setsize="2" aria-posinset="1" data-row-id="new-green"
+          aria-selected="true" title="Green Team"></div>
+        <div role="option" aria-setsize="2" aria-posinset="2" data-row-id="new-red"
+          aria-selected="false" title="Red Team"></div>`;
+    });
+
+    await expect(createAdapter(document).readListFilters()).resolves.toEqual([]);
+    expect(input.value).toBe("team");
+  });
+
+  it("omits a searched projection when labels are only reordered and assigned new logical positions", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Команда" title="Команда">Команда</h3>
+        <div role="combobox" aria-label="team_key" aria-controls="team-popup"></div>
+      </div></section></main>
+      <div id="team-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div role="listbox" aria-multiselectable="true" aria-label="team_key">
+            <div role="option" aria-setsize="2" aria-posinset="1" data-row-id="green"
+              aria-selected="true" title="Green Team"></div>
+            <div role="option" aria-setsize="2" aria-posinset="2" data-row-id="red"
+              aria-selected="false" title="Red Team"></div>
+          </div>
+        </div>
+      </div>
+    `;
+    const input = document.querySelector<HTMLInputElement>("#team-popup input.searchInput")!;
+    input.value = "team";
+    input.addEventListener("input", () => {
+      if (input.value !== "") {
+        return;
+      }
+      document.querySelector<HTMLElement>("#team-popup [role=listbox]")!.innerHTML = `
+        <div role="option" aria-setsize="2" aria-posinset="1" data-row-id="red"
+          aria-selected="false" title="Red Team"></div>
+        <div role="option" aria-setsize="2" aria-posinset="2" data-row-id="green"
+          aria-selected="true" title="Green Team"></div>`;
+    });
+
+    await expect(createAdapter(document).readListFilters()).resolves.toEqual([]);
+    expect(input.value).toBe("team");
+  });
+
+  it("treats duplicate normalized labels as a multiset when proving a domain transition", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Value" title="Value">Value</h3>
+        <div role="combobox" aria-label="value_key" aria-controls="value-popup"></div>
+      </div></section></main>
+      <div id="value-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div role="listbox" aria-multiselectable="true" aria-label="value_key">
+            <div role="option" aria-selected="true" title="Duplicate"></div>
+            <div role="option" aria-selected="true" title="Duplicate"></div>
+          </div>
+        </div>
+      </div>
+    `;
+    const input = document.querySelector<HTMLInputElement>("#value-popup input.searchInput")!;
+    input.value = "dup";
+    modelSearchProjectionRestore(input);
+    input.addEventListener("input", () => {
+      if (input.value === "") {
+        document.querySelector<HTMLElement>("#value-popup [role=listbox]")!.insertAdjacentHTML(
+          "beforeend",
+          '<div role="option" aria-selected="true" title="Duplicate"></div>'
+        );
+      }
+    });
+
+    await expect(createAdapter(document).readListFilters()).resolves.toEqual([
+      { title: "Value", type: "list", selectedLabels: ["Duplicate"] }
+    ]);
+    expect(input.value).toBe("dup");
+  });
+
+  it("omits an unchanged multirow search projection after clearing its controlled query", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Команда" title="Команда">Команда</h3>
+        <div role="combobox" aria-label="team_key" aria-controls="team-popup"></div>
+      </div></section></main>
+      <div id="team-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div role="listbox" aria-multiselectable="true" aria-label="team_key">
+            <div role="option" aria-setsize="2" aria-posinset="1" data-row-id="green"
+              aria-selected="true" title="Green Team"></div>
+            <div role="option" aria-setsize="2" aria-posinset="2" data-row-id="red"
+              aria-selected="false" title="Red Team"></div>
+          </div>
+        </div>
+      </div>
+    `;
+    const input = document.querySelector<HTMLInputElement>("#team-popup input.searchInput")!;
+    input.value = "team";
+
+    await expect(createAdapter(document).readListFilters()).resolves.toEqual([]);
+    expect(input.value).toBe("team");
+  });
+
+  it("clears an active search to capture selected values outside the projection, then restores it", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+        <div role="combobox" aria-label="queue_key" aria-controls="queue-popup"></div>
+      </div></section></main>
+      <div id="queue-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div class="slicerBody" role="listbox" aria-multiselectable="true" aria-label="queue_key">
+            <div role="option" aria-setsize="1" aria-posinset="1" data-row-id="cma"
+              aria-selected="true" title="CMA"></div>
+          </div>
+        </div>
+      </div>
+    `;
+    const input = document.querySelector<HTMLInputElement>("#queue-popup input.searchInput")!;
+    const listbox = document.querySelector<HTMLElement>('[role="listbox"][aria-label="queue_key"]')!;
+    input.value = "cma";
+    input.addEventListener("input", () => {
+      listbox.innerHTML = input.value === ""
+        ? `<div role="option" aria-setsize="2" aria-posinset="1" data-row-id="cma"
+             aria-selected="true" title="CMA"></div>
+           <div role="option" aria-setsize="2" aria-posinset="2" data-row-id="other"
+             aria-selected="true" title="Other"></div>`
+        : `<div role="option" aria-setsize="1" aria-posinset="1" data-row-id="cma"
+             aria-selected="true" title="CMA"></div>`;
+    });
+
+    await expect(createAdapter(document).readListFilters()).resolves.toEqual([
+      { title: "Очередь", type: "list", selectedLabels: ["CMA", "Other"] }
+    ]);
+    expect(input.value).toBe("cma");
+    expect(Array.from(listbox.querySelectorAll('[role="option"]')).map((row) => row.getAttribute("title"))).toEqual([
+      "CMA"
+    ]);
+  });
+
+  it("waits for a delayed unfiltered-domain transition before capturing active-search selections", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+        <div role="combobox" aria-label="queue_key" aria-controls="queue-popup"></div>
+      </div></section></main>
+      <div id="queue-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div role="listbox" aria-multiselectable="true" aria-label="queue_key">
+            <div role="option" aria-setsize="1" aria-posinset="1" data-row-id="cma"
+              aria-selected="true" title="CMA"></div>
+          </div>
+        </div>
+      </div>
+    `;
+    const input = document.querySelector<HTMLInputElement>("#queue-popup input.searchInput")!;
+    const listbox = document.querySelector<HTMLElement>('#queue-popup [role="listbox"]')!;
+    input.value = "cma";
+    let clearObserved = false;
+    modelSearchProjectionRestore(input);
+    input.addEventListener("input", () => {
+      clearObserved ||= input.value === "";
+    });
+    const timing = createScheduledTiming((delayCount) => {
+      if (!clearObserved || delayCount !== 3) {
+        return;
+      }
+      listbox.innerHTML = `
+        <div role="option" aria-setsize="2" aria-posinset="1" data-row-id="cma"
+          aria-selected="true" title="CMA"></div>
+        <div role="option" aria-setsize="2" aria-posinset="2" data-row-id="other"
+          aria-selected="true" title="Other"></div>`;
+    });
+
+    await expect(createAdapterWithDefaults(document, { timing }).readListFilters()).resolves.toEqual([
+      { title: "Очередь", type: "list", selectedLabels: ["CMA", "Other"] }
+    ]);
+    expect(input.value).toBe("cma");
+  });
+
+  it("scans beyond an unchanged searched top viewport after the loader settles", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+        <div role="combobox" aria-label="queue_key" aria-controls="queue-popup"></div>
+      </div></section></main>
+      <div id="queue-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div role="listbox" aria-multiselectable="true" aria-label="queue_key">
+            <div class="scroll-wrapper"><div class="scroll-content">
+              <div role="option" aria-setsize="1" aria-posinset="1" data-row-id="cma"
+                aria-selected="true" title="CMA"></div>
+            </div></div>
+          </div>
+          <div class="slicer-dropdown-loader" style="display: none"></div>
+        </div>
+      </div>
+    `;
+    const input = document.querySelector<HTMLInputElement>("#queue-popup input.searchInput")!;
+    const scrollContent = document.querySelector<HTMLElement>("#queue-popup .scroll-content")!;
+    const loader = document.querySelector<HTMLElement>("#queue-popup .slicer-dropdown-loader")!;
+    input.value = "cma";
+    let expanded = false;
+    modelSearchProjectionRestore(input);
+    Object.defineProperties(scrollContent, {
+      clientHeight: { configurable: true, value: 20 },
+      scrollHeight: { configurable: true, get: () => expanded ? 60 : 20 }
+    });
+    input.addEventListener("input", () => {
+      if (input.value === "") {
+        loader.style.display = "block";
+      }
+    });
+    scrollContent.addEventListener("scroll", () => {
+      if (scrollContent.scrollTop <= 0) {
+        return;
+      }
+      scrollContent.innerHTML = `
+        <div role="option" aria-setsize="3" aria-posinset="1" data-row-id="cma"
+          aria-selected="true" title="CMA"></div>
+        <div role="option" aria-setsize="3" aria-posinset="2" data-row-id="other"
+          aria-selected="true" title="Other"></div>
+        <div role="option" aria-setsize="3" aria-posinset="3" data-row-id="third"
+          aria-selected="false" title="Third"></div>`;
+    });
+    let now = 0;
+    const timing: PowerBiTiming = {
+      now: () => now,
+      async delay(ms) {
+        now += Math.max(1, ms);
+        if (now >= 1200) {
+          expanded = true;
+          loader.style.display = "none";
+        }
+        await Promise.resolve();
+      }
+    };
+
+    await expect(createAdapterWithDefaults(document, { timing }).readListFilters()).resolves.toEqual([
+      { title: "Очередь", type: "list", selectedLabels: ["CMA", "Other"] }
+    ]);
+    expect(input.value).toBe("cma");
+    expect(now).toBeLessThanOrEqual(3000);
+  });
+
+  it("captures the live delayed Queue domain after a provisional mixed-metadata projection", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+        <div role="combobox" aria-label="queue_key" aria-controls="queue-popup"></div>
+      </div></section></main>
+      <div id="queue-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div role="listbox" aria-multiselectable="true" aria-label="queue_key">
+            <div class="scroll-content">
+              <div role="option" aria-setsize="1" aria-posinset="1" data-row-id="0:1"
+                aria-selected="false" title="CMA"></div>
+              <div role="option" aria-setsize="-1" aria-posinset="1" data-row-id="0:2"
+                aria-selected="true" title="ABP"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    const input = document.querySelector<HTMLInputElement>("#queue-popup input.searchInput")!;
+    const scrollContent = document.querySelector<HTMLElement>("#queue-popup .scroll-content")!;
+    input.value = "cma";
+    let fullDomainRendered = false;
+    modelSearchProjectionRestore(input);
+    Object.defineProperties(scrollContent, {
+      clientHeight: { configurable: true, value: 20 },
+      scrollHeight: { configurable: true, get: () => fullDomainRendered ? 60 : 20 }
+    });
+    let now = 0;
+    const timing: PowerBiTiming = {
+      now: () => now,
+      async delay(ms) {
+        now += Math.max(1, ms);
+        if (!fullDomainRendered && input.value === "" && now >= 300) {
+          fullDomainRendered = true;
+          scrollContent.innerHTML = `
+            <div role="option" aria-setsize="3" aria-posinset="1" data-row-id="0:1"
+              aria-selected="false" title="Select all"></div>
+            <div role="option" aria-setsize="3" aria-posinset="2" data-row-id="0:2"
+              aria-selected="false" title="CMA"></div>
+            <div role="option" aria-setsize="3" aria-posinset="3" data-row-id="0:3"
+              aria-selected="true" title="ABP"></div>`;
+        }
+        await Promise.resolve();
+      }
+    };
+
+    await expect(createAdapterWithDefaults(document, { timing }).readListFilters()).resolves.toEqual([
+      { title: "Очередь", type: "list", selectedLabels: ["ABP"] }
+    ]);
+    expect(fullDomainRendered).toBe(true);
+    expect(input.value).toBe("cma");
+    expect(now).toBeLessThanOrEqual(3000);
+  });
+
+  it("drops a selected unknown-size provisional label when the clean full domain omits it", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Команда" title="Команда">Команда</h3>
+        <div role="combobox" aria-label="Команда" aria-controls="team-popup"></div>
+      </div></section></main>
+      <div id="team-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div role="listbox" aria-multiselectable="true" aria-label="Команда">
+            <div role="option" aria-setsize="1" aria-posinset="1" data-row-id="known"
+              aria-selected="false" title="Known Team"></div>
+            <div role="option" aria-setsize="-1" aria-posinset="1" data-row-id="stale"
+              aria-selected="true" title="Stale Team"></div>
+          </div>
+        </div>
+      </div>
+    `;
+    const input = document.querySelector<HTMLInputElement>("#team-popup input.searchInput")!;
+    const listbox = document.querySelector<HTMLElement>('#team-popup [role="listbox"]')!;
+    input.value = "known";
+    modelSearchProjectionRestore(input);
+    let cleanDomainRendered = false;
+    const timing = createScheduledTiming((delayCount) => {
+      if (cleanDomainRendered || input.value !== "" || delayCount < 3) {
+        return;
+      }
+      cleanDomainRendered = true;
+      listbox.innerHTML = `
+        <div role="option" aria-setsize="2" aria-posinset="1" data-row-id="known"
+          aria-selected="false" title="Known Team"></div>
+        <div role="option" aria-setsize="2" aria-posinset="2" data-row-id="actual"
+          aria-selected="true" title="Actual Team"></div>`;
+    });
+
+    await expect(createAdapterWithDefaults(document, { timing }).readListFilters()).resolves.toEqual([
+      { title: "Команда", type: "list", selectedLabels: ["Actual Team"] }
+    ]);
+    expect(cleanDomainRendered).toBe(true);
+    expect(input.value).toBe("known");
+  });
+
+  it("clears physical-epoch labels when the same listbox becomes coherently logical", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+        <div role="combobox" aria-label="queue_key" aria-controls="queue-popup"></div>
+      </div></section></main>
+      <div id="queue-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div role="listbox" aria-multiselectable="true" aria-label="queue_key">
+            <div role="option" data-row-id="projected" aria-selected="true" title="Projected"></div>
+          </div>
+        </div>
+      </div>
+    `;
+    const input = document.querySelector<HTMLInputElement>("#queue-popup input.searchInput")!;
+    const listbox = document.querySelector<HTMLElement>('#queue-popup [role="listbox"]')!;
+    input.value = "projected";
+    let cleanDomainRendered = false;
+    modelSearchProjectionRestore(input);
+    const timing = createScheduledTiming((delayCount) => {
+      if (cleanDomainRendered || input.value !== "" || delayCount < 3) {
+        return;
+      }
+      cleanDomainRendered = true;
+      listbox.innerHTML = `
+        <div role="option" aria-setsize="2" aria-posinset="1" data-row-id="known"
+          aria-selected="false" title="Known"></div>
+        <div role="option" aria-setsize="2" aria-posinset="2" data-row-id="target"
+          aria-selected="true" title="Target"></div>`;
+    });
+
+    await expect(createAdapterWithDefaults(document, { timing }).readListFilters()).resolves.toEqual([
+      { title: "Очередь", type: "list", selectedLabels: ["Target"] }
+    ]);
+    expect(cleanDomainRendered).toBe(true);
+    expect(input.value).toBe("projected");
+  });
+
+  it("clears logical-epoch labels when the same listbox becomes coherently physical", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+        <div role="combobox" aria-label="queue_key" aria-controls="queue-popup"></div>
+      </div></section></main>
+      <div id="queue-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div role="listbox" aria-multiselectable="true" aria-label="queue_key">
+            <div role="option" aria-setsize="1" aria-posinset="1" data-row-id="projected"
+              aria-selected="true" title="Projected"></div>
+          </div>
+        </div>
+      </div>
+    `;
+    const input = document.querySelector<HTMLInputElement>("#queue-popup input.searchInput")!;
+    const listbox = document.querySelector<HTMLElement>('#queue-popup [role="listbox"]')!;
+    input.value = "projected";
+    let physicalDomainRendered = false;
+    modelSearchProjectionRestore(input);
+    const timing = createScheduledTiming((delayCount) => {
+      if (physicalDomainRendered || input.value !== "" || delayCount < 3) {
+        return;
+      }
+      physicalDomainRendered = true;
+      listbox.innerHTML = `
+        <div role="option" data-row-id="known" aria-selected="false" title="Known"></div>
+        <div role="option" data-row-id="target" aria-selected="true" title="Target"></div>`;
+    });
+
+    await expect(createAdapterWithDefaults(document, { timing }).readListFilters()).resolves.toEqual([
+      { title: "Очередь", type: "list", selectedLabels: ["Target"] }
+    ]);
+    expect(physicalDomainRendered).toBe(true);
+    expect(input.value).toBe("projected");
+  });
+
+  it.each([
+    { caseName: "complete", initialExpectedSize: 2 },
+    { caseName: "provisional", initialExpectedSize: 3 }
+  ])(
+    "drops stale selected labels when a $caseName logical search projection clears through an empty render",
+    async ({ initialExpectedSize }) => {
+      document.body.innerHTML = `
+        <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+          <h3 class="slicer-header-text" aria-label="Queue" title="Queue">Queue</h3>
+          <div role="combobox" aria-label="queue_key" aria-controls="queue-popup"></div>
+        </div></section></main>
+        <div id="queue-popup" class="slicer-dropdown-popup visual themeableElement focused">
+          <div class="slicerContainer isMultiSelectEnabled">
+            <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+            <div role="listbox" aria-multiselectable="true" aria-label="queue_key">
+              <div role="option" aria-setsize="${initialExpectedSize}" aria-posinset="1" data-row-id="a"
+                aria-selected="true" title="A"></div>
+              <div role="option" aria-setsize="${initialExpectedSize}" aria-posinset="2" data-row-id="b"
+                aria-selected="true" title="B"></div>
+            </div>
+            <div class="slicer-dropdown-loader" style="display: none"></div>
+          </div>
+        </div>
+      `;
+      const input = document.querySelector<HTMLInputElement>("#queue-popup input.searchInput")!;
+      const listbox = document.querySelector<HTMLElement>('#queue-popup [role="listbox"]')!;
+      const loader = document.querySelector<HTMLElement>("#queue-popup .slicer-dropdown-loader")!;
+      input.value = "a";
+      modelSearchProjectionRestore(input);
+      let now = 0;
+      let renderPhase = 0;
+      const timing: PowerBiTiming = {
+        now: () => now,
+        async delay(ms) {
+          now += Math.max(1, ms);
+          if (input.value === "" && renderPhase === 0) {
+            renderPhase = 1;
+            listbox.innerHTML = "";
+            loader.style.display = "block";
+          } else if (input.value === "" && renderPhase === 1) {
+            renderPhase = 2;
+            listbox.innerHTML = `
+              <div role="option" aria-setsize="1" aria-posinset="1" data-row-id="a"
+                aria-selected="true" title="A"></div>`;
+            loader.style.display = "none";
+          }
+          await Promise.resolve();
+        }
+      };
+
+      await expect(createAdapterWithDefaults(document, { timing }).readListFilters()).resolves.toEqual([
+        { title: "Queue", type: "list", selectedLabels: ["A"] }
+      ]);
+      expect(renderPhase).toBe(2);
+      expect(input.value).toBe("a");
+      expect(now).toBeLessThanOrEqual(3000);
+    }
+  );
+
+  it("omits capture when an empty-boundary shrink invalidates earlier clear-response proof", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Queue" title="Queue">Queue</h3>
+        <div role="combobox" aria-label="queue_key" aria-controls="queue-popup"></div>
+      </div></section></main>
+      <div id="queue-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div role="listbox" aria-multiselectable="true" aria-label="queue_key">
+            <div role="option" aria-setsize="2" aria-posinset="1" data-row-id="a"
+              aria-selected="true" title="A"></div>
+            <div role="option" aria-setsize="2" aria-posinset="2" data-row-id="b"
+              aria-selected="true" title="B"></div>
+          </div>
+          <div class="slicer-dropdown-loader" style="display: none"></div>
+        </div>
+      </div>
+    `;
+    const input = document.querySelector<HTMLInputElement>("#queue-popup input.searchInput")!;
+    const listbox = document.querySelector<HTMLElement>('#queue-popup [role="listbox"]')!;
+    const loader = document.querySelector<HTMLElement>("#queue-popup .slicer-dropdown-loader")!;
+    input.value = "a";
+    const timing = createScheduledTiming((delayCount) => {
+      if (input.value !== "") {
+        return;
+      }
+      if (delayCount === 1) {
+        listbox.innerHTML = `
+          <div role="option" aria-setsize="2" aria-posinset="1" data-row-id="a"
+            aria-selected="true" title="A"></div>
+          <div role="option" aria-setsize="2" aria-posinset="2" data-row-id="c"
+            aria-selected="true" title="C"></div>`;
+      } else if (delayCount === 2) {
+        listbox.innerHTML = "";
+        loader.style.display = "block";
+      } else if (delayCount === 3) {
+        listbox.innerHTML = `
+          <div role="option" aria-setsize="1" aria-posinset="1" data-row-id="a"
+            aria-selected="true" title="A"></div>`;
+        loader.style.display = "none";
+      }
+    });
+
+    await expect(createAdapterWithDefaults(document, { timing }).readListFilters()).resolves.toEqual([]);
+    expect(input.value).toBe("a");
+  });
+
+  it("omits capture when a metadata-mode reset follows trusted clear-response proof", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+        <div role="combobox" aria-label="queue_key" aria-controls="queue-popup"></div>
+      </div></section></main>
+      <div id="queue-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div role="listbox" aria-multiselectable="true" aria-label="queue_key">
+            <div role="option" aria-selected="true" title="Projected"></div>
+          </div>
+        </div>
+      </div>
+    `;
+    const input = document.querySelector<HTMLInputElement>("#queue-popup input.searchInput")!;
+    const listbox = document.querySelector<HTMLElement>('#queue-popup [role="listbox"]')!;
+    input.value = "projected";
+    const timing = createScheduledTiming((delayCount) => {
+      if (input.value !== "") {
+        return;
+      }
+      if (delayCount === 1) {
+        listbox.innerHTML = `
+          <div role="option" data-row-id="target" aria-posinset="1" aria-setsize="1"
+            aria-selected="true" title="Target"></div>`;
+      } else if (delayCount === 2) {
+        listbox.innerHTML = '<div role="option" aria-selected="true" title="Later"></div>';
+      }
+    });
+
+    await expect(createAdapterWithDefaults(document, { timing }).readListFilters()).resolves.toEqual([]);
+    expect(input.value).toBe("projected");
+  });
+
+  it("does not complete an unchanged mixed projection from geometry-only clear proof", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+        <div role="combobox" aria-label="queue_key" aria-controls="queue-popup"></div>
+      </div></section></main>
+      <div id="queue-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div role="listbox" aria-multiselectable="true" aria-label="queue_key">
+            <div class="scroll-content">
+              <div role="option" aria-setsize="1" aria-posinset="1" data-row-id="known"
+                aria-selected="false" title="Known"></div>
+              <div role="option" aria-setsize="-1" aria-posinset="1" data-row-id="provisional"
+                aria-selected="true" title="Provisional"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    const input = document.querySelector<HTMLInputElement>("#queue-popup input.searchInput")!;
+    const scrollContent = document.querySelector<HTMLElement>("#queue-popup .scroll-content")!;
+    input.value = "known";
+    let geometryExpanded = false;
+    Object.defineProperties(scrollContent, {
+      clientHeight: { configurable: true, value: 20 },
+      scrollHeight: { configurable: true, get: () => geometryExpanded ? 60 : 20 }
+    });
+    const timing = createScheduledTiming((delayCount) => {
+      if (input.value === "" && delayCount >= 3) {
+        geometryExpanded = true;
+      }
+    });
+
+    await expect(createAdapterWithDefaults(document, { timing }).readListFilters()).resolves.toEqual([]);
+    expect(geometryExpanded).toBe(true);
+    expect(input.value).toBe("known");
+  });
+
+  it("allows a coherent full-domain generation to replace provisional pre-proof evidence", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+        <div role="combobox" aria-label="queue_key" aria-controls="queue-popup"></div>
+      </div></section></main>
+      <div id="queue-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div role="listbox" aria-multiselectable="true" aria-label="queue_key">
+            <div role="option" aria-setsize="2" aria-posinset="1" data-row-id="searched-cma"
+              aria-selected="true" title="CMA"></div>
+          </div>
+        </div>
+      </div>
+    `;
+    const input = document.querySelector<HTMLInputElement>("#queue-popup input.searchInput")!;
+    const initialListbox = document.querySelector<HTMLElement>('#queue-popup [role="listbox"]')!;
+    input.value = "cma";
+    modelSearchProjectionRestore(input);
+    let replaced = false;
+    const timing = createScheduledTiming(() => {
+      if (replaced || input.value !== "") {
+        return;
+      }
+      replaced = true;
+      const replacement = initialListbox.cloneNode(false) as HTMLElement;
+      replacement.innerHTML = `
+        <div role="option" aria-setsize="3" aria-posinset="1" data-row-id="full-cma"
+          aria-selected="true" title="CMA"></div>
+        <div role="option" aria-setsize="3" aria-posinset="2" data-row-id="full-other"
+          aria-selected="true" title="Other"></div>
+        <div role="option" aria-setsize="3" aria-posinset="3" data-row-id="full-third"
+          aria-selected="false" title="Third"></div>`;
+      initialListbox.replaceWith(replacement);
+    });
+
+    await expect(createAdapterWithDefaults(document, { timing }).readListFilters()).resolves.toEqual([
+      { title: "Очередь", type: "list", selectedLabels: ["CMA", "Other"] }
+    ]);
+    expect(replaced).toBe(true);
+    expect(input.value).toBe("cma");
+  });
+
+  it("does not treat scrolling through a stale multirow search projection as clear-response proof", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+        <div role="combobox" aria-label="queue_key" aria-controls="queue-popup"></div>
+      </div></section></main>
+      <div id="queue-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div role="listbox" aria-multiselectable="true" aria-label="queue_key">
+            <div class="scroll-wrapper"><div class="scroll-content">
+              <div role="option" aria-setsize="4" aria-posinset="1" data-row-id="one"
+                aria-selected="true" title="One"></div>
+              <div role="option" aria-setsize="4" aria-posinset="2" data-row-id="two"
+                aria-selected="false" title="Two"></div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    `;
+    const input = document.querySelector<HTMLInputElement>("#queue-popup input.searchInput")!;
+    const scrollContent = document.querySelector<HTMLElement>("#queue-popup .scroll-content")!;
+    input.value = "o";
+    Object.defineProperties(scrollContent, {
+      clientHeight: { configurable: true, value: 40 },
+      scrollHeight: { configurable: true, value: 80 }
+    });
+    scrollContent.addEventListener("scroll", () => {
+      if (scrollContent.scrollTop <= 0) {
+        return;
+      }
+      scrollContent.innerHTML = `
+        <div role="option" aria-setsize="4" aria-posinset="3" data-row-id="three"
+          aria-selected="true" title="Three"></div>
+        <div role="option" aria-setsize="4" aria-posinset="4" data-row-id="four"
+          aria-selected="false" title="Four"></div>`;
+    });
+
+    await expect(createAdapter(document).readListFilters()).resolves.toEqual([]);
+    expect(input.value).toBe("o");
+  });
+
+  it("does not treat wheel-rendered row swaps at scrollTop zero as clear-response proof", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+        <div role="combobox" aria-label="queue_key" aria-controls="queue-popup"></div>
+      </div></section></main>
+      <div id="queue-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div role="listbox" aria-multiselectable="true" aria-label="queue_key"></div>
+        </div>
+      </div>
+    `;
+    const input = document.querySelector<HTMLInputElement>("#queue-popup input.searchInput")!;
+    const listbox = document.querySelector<HTMLElement>("#queue-popup [role=listbox]")!;
+    const render = (start: number) => {
+      listbox.innerHTML = Array.from({ length: 8 }, (_value, index) => {
+        const position = start + index;
+        return `<div role="option" aria-setsize="16" aria-posinset="${position}" data-row-id="row-${position}"
+          aria-selected="${position % 2 === 1}" title="Value ${position}"></div>`;
+      }).join("");
+    };
+    input.value = "value";
+    render(1);
+    let wheelSwappedRows = false;
+    listbox.addEventListener("wheel", () => {
+      if (!wheelSwappedRows) {
+        wheelSwappedRows = true;
+        render(9);
+      }
+    });
+
+    await expect(createAdapter(document).readListFilters()).resolves.toEqual([]);
+    // No traversal may begin before the host acknowledges the cleared query.
+    expect(wheelSwappedRows).toBe(false);
+    expect(listbox.scrollTop).toBe(0);
+    expect(input.value).toBe("value");
+  });
+
+  it("invalidates active-search transition proof after an incompatible scan generation reset", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+        <div role="combobox" aria-label="queue_key" aria-controls="queue-popup"></div>
+      </div></section></main>
+      <div id="queue-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div role="listbox" aria-multiselectable="true" aria-label="queue_key">
+            <div role="option" aria-setsize="1" aria-posinset="1" data-row-id="searched-cma"
+              aria-selected="true" title="CMA"></div>
+          </div>
+        </div>
+      </div>
+    `;
+    const input = document.querySelector<HTMLInputElement>("#queue-popup input.searchInput")!;
+    const listbox = document.querySelector<HTMLElement>('#queue-popup [role="listbox"]')!;
+    input.value = "cma";
+    input.addEventListener("input", () => {
+      if (input.value !== "") {
+        return;
+      }
+      listbox.innerHTML = `
+        <div role="option" aria-setsize="2" aria-posinset="1" data-row-id="full-cma"
+          aria-selected="true" title="CMA"></div>
+        <div role="option" aria-setsize="2" aria-posinset="2" data-row-id="full-other"
+          aria-selected="true" title="Other"></div>`;
+    });
+    listbox.addEventListener("wheel", () => {
+      if (!listbox.isConnected || input.value !== "") {
+        return;
+      }
+      const replacement = listbox.cloneNode(false) as HTMLElement;
+      replacement.innerHTML = `
+        <div role="option" aria-setsize="1" aria-posinset="1" data-row-id="partial-cma"
+          aria-selected="true" title="CMA"></div>`;
+      listbox.replaceWith(replacement);
+    });
+
+    await expect(createAdapter(document).readListFilters()).resolves.toEqual([]);
+    expect(input.value).toBe("cma");
+  });
+
+  it("waits for a clear-triggered loader on an already-scrollable projection before traversal", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+        <div role="combobox" aria-label="queue_key" aria-controls="queue-popup"></div>
+      </div></section></main>
+      <div id="queue-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div role="listbox" aria-multiselectable="true" aria-label="queue_key">
+            <div class="scroll-content">
+              <div role="option" aria-setsize="1" aria-posinset="1" data-row-id="cma"
+                aria-selected="true" title="CMA"></div>
+            </div>
+          </div>
+          <div class="slicer-dropdown-loader" style="display: none"></div>
+        </div>
+      </div>
+    `;
+    const input = document.querySelector<HTMLInputElement>("#queue-popup input.searchInput")!;
+    const scrollContent = document.querySelector<HTMLElement>("#queue-popup .scroll-content")!;
+    const loader = document.querySelector<HTMLElement>("#queue-popup .slicer-dropdown-loader")!;
+    input.value = "cma";
+    modelSearchProjectionRestore(input);
+    let expanded = false;
+    Object.defineProperties(scrollContent, {
+      clientHeight: { configurable: true, value: 20 },
+      scrollHeight: { configurable: true, get: () => expanded ? 60 : 40 }
+    });
+    input.addEventListener("input", () => {
+      if (input.value === "") {
+        loader.style.display = "block";
+      }
+    });
+    scrollContent.addEventListener("scroll", () => {
+      if (scrollContent.scrollTop > 0) {
+        scrollContent.innerHTML = `
+          <div role="option" aria-setsize="3" aria-posinset="1" data-row-id="cma"
+            aria-selected="true" title="CMA"></div>
+          <div role="option" aria-setsize="3" aria-posinset="2" data-row-id="other"
+            aria-selected="true" title="Other"></div>
+          <div role="option" aria-setsize="3" aria-posinset="3" data-row-id="third"
+            aria-selected="false" title="Third"></div>`;
+      }
+    });
+    let now = 0;
+    const timing: PowerBiTiming = {
+      now: () => now,
+      async delay(ms) {
+        now += Math.max(1, ms);
+        if (now >= 900) {
+          expanded = true;
+          loader.style.display = "none";
+        }
+        await Promise.resolve();
+      }
+    };
+
+    await expect(createAdapterWithDefaults(document, { timing }).readListFilters()).resolves.toEqual([
+      { title: "Очередь", type: "list", selectedLabels: ["CMA", "Other"] }
+    ]);
+    expect(input.value).toBe("cma");
+    expect(now).toBeLessThanOrEqual(3000);
+  });
+
+  it("captures a Team-like mixed searched projection only after the full domain renders", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Команда" title="Команда">Команда</h3>
+        <div role="combobox" aria-label="Команда" aria-controls="team-popup"></div>
+      </div></section></main>
+      <div id="team-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div role="listbox" aria-multiselectable="true" aria-label="Команда">
+            <div role="option" aria-setsize="1" aria-posinset="1" data-row-id="0:1"
+              aria-selected="false" title="White Team"></div>
+            <div role="option" aria-setsize="-1" aria-posinset="1" data-row-id="0:2"
+              aria-selected="true" title="Green Team"></div>
+          </div>
+        </div>
+      </div>
+    `;
+    const input = document.querySelector<HTMLInputElement>("#team-popup input.searchInput")!;
+    input.value = "white";
+    modelSearchProjectionRestore(input);
+    input.addEventListener("input", () => {
+      if (input.value !== "") {
+        return;
+      }
+      document.querySelector<HTMLElement>("#team-popup [role=listbox]")!.innerHTML = `
+        <div role="option" aria-setsize="3" aria-posinset="1" data-row-id="0:1"
+          aria-selected="false" title="White Team"></div>
+        <div role="option" aria-setsize="3" aria-posinset="2" data-row-id="0:2"
+          aria-selected="true" title="Green Team"></div>
+        <div role="option" aria-setsize="3" aria-posinset="3" data-row-id="0:3"
+          aria-selected="true" title="Lime Team"></div>`;
+    });
+
+    await expect(createAdapter(document).readListFilters()).resolves.toEqual([
+      { title: "Команда", type: "list", selectedLabels: ["Green Team", "Lime Team"] }
+    ]);
+    expect(input.value).toBe("white");
+  });
+
+  it("captures the delayed Team domain after a provisional mixed-metadata projection", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Команда" title="Команда">Команда</h3>
+        <div role="combobox" aria-label="Команда" aria-controls="team-popup"></div>
+      </div></section></main>
+      <div id="team-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div role="listbox" aria-multiselectable="true" aria-label="Команда">
+            <div class="scroll-content">
+              <div role="option" aria-setsize="1" aria-posinset="1" data-row-id="0:1"
+                aria-selected="false" title="White Team"></div>
+              <div role="option" aria-setsize="-1" aria-posinset="1" data-row-id="0:2"
+                aria-selected="true" title="Green Team"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    const input = document.querySelector<HTMLInputElement>("#team-popup input.searchInput")!;
+    const scrollContent = document.querySelector<HTMLElement>("#team-popup .scroll-content")!;
+    input.value = "white";
+    modelSearchProjectionRestore(input);
+    let fullDomainRendered = false;
+    Object.defineProperties(scrollContent, {
+      clientHeight: { configurable: true, value: 20 },
+      scrollHeight: { configurable: true, get: () => fullDomainRendered ? 60 : 20 }
+    });
+    let now = 0;
+    const timing: PowerBiTiming = {
+      now: () => now,
+      async delay(ms) {
+        now += Math.max(1, ms);
+        if (!fullDomainRendered && input.value === "" && now >= 300) {
+          fullDomainRendered = true;
+          scrollContent.innerHTML = `
+            <div role="option" aria-setsize="3" aria-posinset="1" data-row-id="0:1"
+              aria-selected="false" title="White Team"></div>
+            <div role="option" aria-setsize="3" aria-posinset="2" data-row-id="0:2"
+              aria-selected="true" title="Green Team"></div>
+            <div role="option" aria-setsize="3" aria-posinset="3" data-row-id="0:3"
+              aria-selected="true" title="Lime Team"></div>`;
+        }
+        await Promise.resolve();
+      }
+    };
+
+    await expect(createAdapterWithDefaults(document, { timing }).readListFilters()).resolves.toEqual([
+      { title: "Команда", type: "list", selectedLabels: ["Green Team", "Lime Team"] }
+    ]);
+    expect(fullDomainRendered).toBe(true);
+    expect(input.value).toBe("white");
+    expect(now).toBeLessThanOrEqual(3000);
+  });
+
+  it("omits a projection whose unfiltered-domain transition arrives after the capture deadline", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+        <div role="combobox" aria-label="queue_key" aria-controls="queue-popup"></div>
+      </div></section></main>
+      <div id="queue-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div role="listbox" aria-multiselectable="true" aria-label="queue_key">
+            <div role="option" aria-setsize="1" aria-posinset="1" data-row-id="cma"
+              aria-selected="true" title="CMA"></div>
+          </div>
+        </div>
+      </div>
+    `;
+    const input = document.querySelector<HTMLInputElement>("#queue-popup input.searchInput")!;
+    const listbox = document.querySelector<HTMLElement>('#queue-popup [role="listbox"]')!;
+    input.value = "cma";
+    let now = 0;
+    const timing: PowerBiTiming = {
+      now: () => now,
+      async delay(ms) {
+        now += Math.max(1, ms);
+        if (now >= 9000) {
+          listbox.innerHTML = `
+            <div role="option" aria-setsize="2" aria-posinset="1" data-row-id="cma"
+              aria-selected="true" title="CMA"></div>
+            <div role="option" aria-setsize="2" aria-posinset="2" data-row-id="other"
+              aria-selected="true" title="Other"></div>`;
+        }
+        await Promise.resolve();
+      }
+    };
+
+    await expect(createAdapterWithDefaults(document, { timing }).readListFilters()).resolves.toEqual([]);
+    expect(input.value).toBe("cma");
+    expect(now).toBeLessThanOrEqual(9000);
+  });
+
+  it("captures the searched singleton when another slicer is scanned before a delayed popup replacement", async () => {
+    document.body.innerHTML = `
+      <main>
+        <section class="visual customPadding visual-slicer">
+          <div class="slicer-container">
+            <h3 class="slicer-header-text" aria-label="Команда" title="Команда">Команда</h3>
+            <div role="combobox" aria-label="team_key" aria-controls="team-popup"></div>
+          </div>
+        </section>
+        <section class="visual customPadding visual-slicer">
+          <div class="slicer-container">
+            <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+            <div role="combobox" aria-label="queue_key" aria-controls="queue-popup"></div>
+          </div>
+        </section>
+      </main>
+      <div id="queue-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div class="slicerBody" role="listbox" aria-multiselectable="true" aria-label="queue_key">
+            <div role="option" aria-setsize="2" aria-posinset="1" data-row-id="0:1"
+              aria-selected="true" title="CMA"></div>
+            <div role="option" aria-setsize="2" aria-posinset="2" data-row-id="0:2"
+              aria-selected="true" title="Other"></div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const replacePopup = (selector: string, markup: string) => {
+      document.querySelector(selector)?.remove();
+      document.body.insertAdjacentHTML("beforeend", markup);
+    };
+    const teamCombobox = document.querySelector<HTMLElement>('[role="combobox"][aria-label="team_key"]')!;
+    const queueCombobox = document.querySelector<HTMLElement>('[role="combobox"][aria-label="queue_key"]')!;
+    let teamOpened = false;
+    let queueOpened = false;
+    let queuePopupPending = false;
+    let queueSearchRestored = false;
+
+    teamCombobox.addEventListener("click", () => {
+      if (teamOpened) {
+        document.querySelector("#team-popup")?.remove();
+        return;
+      }
+      teamOpened = true;
+      document.querySelector("#queue-popup")?.remove();
+      replacePopup("#team-popup", `
+        <div id="team-popup" class="slicer-dropdown-popup visual themeableElement focused">
+          <div class="slicer-dropdown-content"><div class="slicerContainer isMultiSelectEnabled">
+            <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+            <div class="slicerBody" role="listbox" aria-multiselectable="true" aria-label="team_key">
+              <div role="option" aria-setsize="2" aria-posinset="1" data-row-id="team-1"
+                aria-selected="true" title="White Team"></div>
+              <div role="option" aria-setsize="2" aria-posinset="2" data-row-id="team-2"
+                aria-selected="false" title="Green Team"></div>
+            </div>
+          </div></div>
+          <div class="slicer-dropdown-loader" style="display: none"></div>
+        </div>
+      `);
+    });
+    queueCombobox.addEventListener("click", () => {
+      if (queueOpened) {
+        document.querySelector("#queue-popup")?.remove();
+        return;
+      }
+      queueOpened = true;
+      queuePopupPending = true;
+    });
+    const timing = createScheduledTiming(() => {
+      if (!queuePopupPending) {
+        return;
+      }
+      queuePopupPending = false;
+      replacePopup("#queue-popup", `
+        <div id="queue-popup" class="slicer-dropdown-popup visual themeableElement focused">
+          <div class="slicer-dropdown-content"><div class="slicerContainer isMultiSelectEnabled">
+            <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+            <div class="slicerBody" role="listbox" aria-multiselectable="true" aria-label="queue_key">
+              <div class="slicerItemContainer" tabindex="0" role="option" aria-setsize="1"
+                aria-posinset="1" data-row-index="1" data-row-id="0:1" aria-selected="true" title="CMA">
+                <div class="slicerCheckbox selected" aria-hidden="true"></div>
+                <span class="slicerText">CMA</span>
+              </div>
+            </div>
+          </div></div>
+          <div class="slicer-dropdown-loader" style="display: none"></div>
+        </div>
+      `);
+      const input = document.querySelector<HTMLInputElement>("#queue-popup input.searchInput")!;
+      const listbox = document.querySelector<HTMLElement>('#queue-popup [role="listbox"]')!;
+      input.value = "cma";
+      input.addEventListener("input", () => {
+        queueSearchRestored ||= input.value === "cma";
+        listbox.innerHTML = input.value === ""
+          ? `<div role="option" aria-setsize="2" aria-posinset="1" data-row-id="0:1"
+               aria-selected="true" title="CMA"></div>
+             <div role="option" aria-setsize="2" aria-posinset="2" data-row-id="0:2"
+               aria-selected="true" title="Other"></div>`
+          : `<div role="option" aria-setsize="1" aria-posinset="1" data-row-id="0:1"
+               aria-selected="true" title="CMA"></div>`;
+      });
+    });
+
+    await expect(createAdapterWithDefaults(document, { timing }).readListFilters()).resolves.toEqual([
+      { title: "Команда", type: "list", selectedLabels: ["White Team"] },
+      { title: "Очередь", type: "list", selectedLabels: ["CMA", "Other"] }
+    ]);
+    expect(teamOpened).toBe(true);
+    expect(queueOpened).toBe(true);
+    expect(queueSearchRestored).toBe(true);
+  });
+
+  it("restores an initially observed query after another slicer destroys the popup and the target reopens unfiltered", async () => {
+    document.body.innerHTML = `
+      <main>
+        <section class="visual customPadding visual-slicer"><div class="slicer-container">
+          <h3 class="slicer-header-text" aria-label="Команда" title="Команда">Команда</h3>
+          <div role="combobox" aria-label="team_key" aria-controls="team-popup"></div>
+        </div></section>
+        <section class="visual customPadding visual-slicer"><div class="slicer-container">
+          <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+          <div role="combobox" aria-label="queue_key" aria-controls="queue-popup"></div>
+        </div></section>
+      </main>
+      <div id="queue-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div role="listbox" aria-multiselectable="true" aria-label="queue_key">
+            <div role="option" aria-setsize="1" aria-posinset="1" data-row-id="cma"
+              aria-selected="true" title="CMA"></div>
+          </div>
+        </div>
+      </div>
+    `;
+    document.querySelector<HTMLInputElement>("#queue-popup input.searchInput")!.value = "cma";
+    const originalQueueProjection = document.querySelector<HTMLElement>('#queue-popup [role="listbox"]')!.innerHTML;
+    const teamCombobox = document.querySelector<HTMLElement>('[role="combobox"][aria-label="team_key"]')!;
+    const queueCombobox = document.querySelector<HTMLElement>('[role="combobox"][aria-label="queue_key"]')!;
+    teamCombobox.addEventListener("click", () => {
+      document.querySelector("#queue-popup")?.remove();
+      document.body.insertAdjacentHTML("beforeend", `
+        <div id="team-popup" class="slicer-dropdown-popup visual themeableElement focused">
+          <div class="slicerContainer isMultiSelectEnabled">
+            <div role="listbox" aria-multiselectable="true" aria-label="team_key">
+              <div role="option" aria-setsize="2" aria-posinset="1" data-row-id="white"
+                aria-selected="true" title="White Team"></div>
+              <div role="option" aria-setsize="2" aria-posinset="2" data-row-id="green"
+                aria-selected="false" title="Green Team"></div>
+            </div>
+          </div>
+        </div>
+      `);
+    });
+    queueCombobox.addEventListener("click", () => {
+      document.querySelector("#team-popup")?.remove();
+      document.body.insertAdjacentHTML("beforeend", `
+        <div id="queue-popup" class="slicer-dropdown-popup visual themeableElement focused">
+          <div class="slicerContainer isMultiSelectEnabled">
+            <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+            <div role="listbox" aria-multiselectable="true" aria-label="queue_key">
+              <div role="option" aria-setsize="2" aria-posinset="1" data-row-id="cma"
+                aria-selected="true" title="CMA"></div>
+              <div role="option" aria-setsize="2" aria-posinset="2" data-row-id="other"
+                aria-selected="true" title="Other"></div>
+            </div>
+          </div>
+        </div>
+      `);
+      const input = document.querySelector<HTMLInputElement>("#queue-popup input.searchInput")!;
+      input.addEventListener("keyup", () => {
+        if (input.value === "cma") {
+          document.querySelector<HTMLElement>('#queue-popup [role="listbox"]')!.innerHTML = originalQueueProjection;
+        }
+      });
+    });
+
+    await expect(createAdapter(document).readListFilters()).resolves.toEqual([
+      { title: "Команда", type: "list", selectedLabels: ["White Team"] },
+      { title: "Очередь", type: "list", selectedLabels: ["CMA", "Other"] }
+    ]);
+    const restoredInput = document.querySelector<HTMLInputElement>("#queue-popup input.searchInput")!;
+    expect(restoredInput.value).toBe("cma");
+  });
+
+  it("retries query restoration when Power BI replaces the restored input with a blank generation", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+        <div role="combobox" aria-label="queue_key" aria-controls="queue-popup"></div>
+      </div></section></main>
+      <div id="queue-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div role="listbox" aria-multiselectable="true" aria-label="queue_key">
+            <div role="option" aria-setsize="1" aria-posinset="1" data-row-id="cma"
+              aria-selected="true" title="CMA"></div>
+          </div>
+        </div>
+      </div>
+    `;
+    const initialInput = document.querySelector<HTMLInputElement>("#queue-popup input.searchInput")!;
+    const listbox = document.querySelector<HTMLElement>('#queue-popup [role="listbox"]')!;
+    initialInput.value = "cma";
+    modelSearchProjectionRestore(initialInput);
+    let replaceAfterRestore = false;
+    const restoreInputTypes: string[] = [];
+    initialInput.addEventListener("input", (event) => {
+      const inputEvent = event as InputEvent;
+      if (initialInput.value === "") {
+        listbox.innerHTML = `
+          <div role="option" aria-setsize="2" aria-posinset="1" data-row-id="cma"
+            aria-selected="true" title="CMA"></div>
+          <div role="option" aria-setsize="2" aria-posinset="2" data-row-id="other"
+            aria-selected="true" title="Other"></div>`;
+      } else {
+        restoreInputTypes.push(inputEvent.inputType);
+        replaceAfterRestore = true;
+      }
+    });
+    const timing = createScheduledTiming(() => {
+      if (!replaceAfterRestore) {
+        return;
+      }
+      replaceAfterRestore = false;
+      const replacement = initialInput.cloneNode() as HTMLInputElement;
+      replacement.value = "";
+      initialInput.replaceWith(replacement);
+    });
+
+    await expect(createAdapterWithDefaults(document, { timing }).readListFilters()).resolves.toEqual([
+      { title: "Очередь", type: "list", selectedLabels: ["CMA", "Other"] }
+    ]);
+    expect(document.querySelector<HTMLInputElement>("#queue-popup input.searchInput")!.value).toBe("cma");
+    expect(restoreInputTypes).toEqual(["insertText"]);
+  });
+
+  it("preserves compatible selected evidence outside a mixed active-search projection", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Команда" title="Команда">Команда</h3>
+        <div role="combobox" aria-label="team_key" aria-controls="team-popup"></div>
+      </div></section></main>
+      <div id="team-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div class="slicerBody" role="listbox" aria-multiselectable="true" aria-label="team_key">
+            <div role="option" aria-setsize="2" aria-posinset="1" data-row-id="green"
+              aria-selected="true" title="Green Team"></div>
+            <div role="option" aria-setsize="2" aria-posinset="2" data-row-id="red"
+              aria-selected="false" title="Red Team"></div>
+          </div>
+        </div>
+      </div>
+    `;
+    const input = document.querySelector<HTMLInputElement>("#team-popup input.searchInput")!;
+    const listbox = document.querySelector<HTMLElement>('#team-popup [role="listbox"]')!;
+    input.value = "Green";
+    input.addEventListener("input", () => {
+      listbox.innerHTML = input.value === ""
+        ? [
+            ["Green Team", true],
+            ["Red Team", false],
+            ["White Team", true],
+            ["Lime Team", true]
+          ].map(([label, selected], index) =>
+            `<div role="option" aria-setsize="4" aria-posinset="${index + 1}" data-row-id="team-${index + 1}"
+               aria-selected="${selected}" title="${label}"></div>`
+          ).join("")
+        : `<div role="option" aria-setsize="2" aria-posinset="1" data-row-id="green"
+             aria-selected="true" title="Green Team"></div>
+           <div role="option" aria-setsize="2" aria-posinset="2" data-row-id="red"
+             aria-selected="false" title="Red Team"></div>`;
+    });
+
+    await expect(createAdapter(document).readListFilters()).resolves.toEqual([
+      { title: "Команда", type: "list", selectedLabels: ["Green Team", "White Team", "Lime Team"] }
+    ]);
+    expect(input.value).toBe("Green");
+  });
+
+  it("does not accept an identical controlled clone or merge evidence from a hidden popup", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+        <div role="combobox" aria-label="queue_key" aria-controls="live-popup hidden-popup"></div>
+      </div></section></main>
+      <div id="live-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div class="slicerBody" role="listbox" aria-multiselectable="true" aria-label="queue_key">
+            <div role="option" aria-setsize="1" aria-posinset="1" data-row-id="cma"
+              aria-selected="true" title="CMA"></div>
+          </div>
+        </div>
+      </div>
+      <div id="hidden-popup" class="slicer-dropdown-popup" style="display: none">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div class="slicerBody" role="listbox" aria-multiselectable="true" aria-label="queue_key">
+            <div role="option" data-row-id="stale" aria-selected="true" title="Stale value"></div>
+          </div>
+        </div>
+      </div>
+    `;
+    const liveInput = document.querySelector<HTMLInputElement>("#live-popup input.searchInput")!;
+    liveInput.value = "cma";
+    liveInput.addEventListener("input", () => {
+      if (liveInput.value === "") {
+        const listbox = document.querySelector<HTMLElement>("#live-popup [role=listbox]")!;
+        listbox.replaceWith(listbox.cloneNode(true));
+      }
+    });
+    document.querySelector<HTMLInputElement>("#hidden-popup input.searchInput")!.value = "stale";
+
+    await expect(createAdapter(document).readListFilters()).resolves.toEqual([]);
+  });
+
+  it("fails closed when same-operation selected evidence is explicitly contradicted", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+        <div role="combobox" aria-label="queue_key" aria-controls="queue-popup"></div>
+      </div></section></main>
+      <div id="queue-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div class="slicerBody" role="listbox" aria-multiselectable="true" aria-label="queue_key">
+            <div role="option" data-row-id="cma" aria-selected="true" title="CMA"></div>
+            <div role="option" data-row-id="other" aria-selected="true" title="Other"></div>
+            <div role="option" data-row-id="other" aria-selected="false" title="Other"></div>
+          </div>
+        </div>
+      </div>
+    `;
+    const input = document.querySelector<HTMLInputElement>("#queue-popup input.searchInput")!;
+    input.value = "cma";
+
+    await expect(createAdapter(document).readListFilters()).resolves.toEqual([]);
+    expect(input.value).toBe("cma");
+  });
+
+  it("omits a searched singleton when a generic multiple summary never yields the full domain", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+        <div role="combobox" aria-label="queue_key" aria-controls="queue-popup">
+          <div class="slicer-restatement">Multiple selections</div>
+        </div>
+      </div></section></main>
+      <div id="queue-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div class="slicerBody" role="listbox" aria-multiselectable="true" aria-label="queue_key">
+            <div role="option" aria-setsize="1" aria-posinset="1" data-row-id="cma"
+              aria-selected="true" title="CMA"></div>
+          </div>
+        </div>
+      </div>
+    `;
+    const input = document.querySelector<HTMLInputElement>("#queue-popup input.searchInput")!;
+    input.value = "cma";
+
+    await expect(createAdapter(document).readListFilters()).resolves.toEqual([]);
+    expect(input.value).toBe("cma");
+  });
+
+  it("restores search and omits capture when the unfiltered logical domain stays incomplete", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+        <div role="combobox" aria-label="queue_key" aria-controls="queue-popup"></div>
+      </div></section></main>
+      <div id="queue-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div class="slicerBody" role="listbox" aria-multiselectable="true" aria-label="queue_key">
+            <div class="scroll-content">
+              <div role="option" aria-setsize="1" aria-posinset="1" data-row-id="cma"
+                aria-selected="true" title="CMA"></div>
+            </div>
+          </div>
+          <div class="slicer-dropdown-loader" style="display: none"></div>
+        </div>
+      </div>
+    `;
+    const input = document.querySelector<HTMLInputElement>("#queue-popup input.searchInput")!;
+    const listbox = document.querySelector<HTMLElement>('#queue-popup [role="listbox"]')!;
+    const scrollContent = document.querySelector<HTMLElement>("#queue-popup .scroll-content")!;
+    const loader = document.querySelector<HTMLElement>("#queue-popup .slicer-dropdown-loader")!;
+    input.value = "cma";
+    Object.defineProperties(scrollContent, {
+      clientHeight: { configurable: true, value: 20 },
+      scrollHeight: { configurable: true, value: 40 }
+    });
+    let traversalAttempts = 0;
+    listbox.addEventListener("wheel", () => {
+      traversalAttempts += 1;
+    });
+    scrollContent.addEventListener("scroll", () => {
+      traversalAttempts += 1;
+    });
+    input.addEventListener("input", () => {
+      if (input.value !== "") {
+        return;
+      }
+      listbox.innerHTML = `<div role="option" aria-setsize="3" aria-posinset="1" data-row-id="cma"
+        aria-selected="true" title="CMA"></div>`;
+      loader.style.display = "block";
+    });
+
+    let elapsed = 0;
+    const timing: PowerBiTiming = {
+      now: () => elapsed,
+      async delay(ms) {
+        elapsed += Math.max(1, ms);
+        await Promise.resolve();
+      }
+    };
+
+    await expect(createAdapterWithDefaults(document, { timing }).readListFilters()).resolves.toEqual([]);
+    expect(input.value).toBe("cma");
+    expect(elapsed).toBeLessThanOrEqual(9000);
+    expect(traversalAttempts).toBe(0);
+  });
+
+  it("fails closed for duplicate-title slicers backed by uncontrolled external popups", async () => {
+    document.body.innerHTML = `
+      <main>
+        <section class="visual customPadding visual-slicer"><div class="slicer-container">
+          <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+          <div role="combobox" aria-label="queue_key_a"></div>
+        </div></section>
+        <section class="visual customPadding visual-slicer"><div class="slicer-container">
+          <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+          <div role="combobox" aria-label="queue_key_b"></div>
+        </div></section>
+      </main>
+      <div class="slicer-dropdown-popup"><div class="slicerContainer isMultiSelectEnabled">
+        <div class="slicerBody" role="listbox" aria-label="Очередь">
+          <div role="option" aria-selected="true" title="CMA"></div>
+        </div>
+      </div>
+    `;
+
+    await expect(createAdapter(document).readListFilters()).resolves.toEqual([]);
+  });
+
+  it("fails closed when the active query changes across popup generations", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+        <div role="combobox" aria-label="queue_key" aria-controls="queue-popup"></div>
+      </div></section></main>
+      <div id="queue-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div class="slicerBody" role="listbox" aria-multiselectable="true" aria-label="queue_key">
+            <div role="option" aria-setsize="2" aria-posinset="1" data-row-id="cma"
+              aria-selected="true" title="CMA"></div>
+            <div role="option" aria-setsize="2" aria-posinset="2" data-row-id="other"
+              aria-selected="true" title="Other"></div>
+          </div>
+        </div>
+      </div>
+    `;
+    document.querySelector<HTMLInputElement>("#queue-popup input.searchInput")!.value = "old";
+    let replaced = false;
+    const timing = createScheduledTiming(() => {
+      if (replaced) {
+        return;
+      }
+      replaced = true;
+      document.querySelector("#queue-popup")!.innerHTML = `
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div class="slicerBody" role="listbox" aria-multiselectable="true" aria-label="queue_key">
+            <div role="option" aria-setsize="1" aria-posinset="1" data-row-id="replacement-cma"
+              aria-selected="true" title="CMA"></div>
+          </div>
+        </div>
+      `;
+      document.querySelector<HTMLInputElement>("#queue-popup input.searchInput")!.value = "cma";
+    });
+
+    await expect(createAdapterWithDefaults(document, { timing }).readListFilters()).resolves.toEqual([]);
+  });
+
+  it("uses aria-controls structural ownership even when the listbox label differs", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+        <div role="combobox" aria-label="queue_key" aria-controls="wrong-popup"></div>
+      </div></section></main>
+      <div id="wrong-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div class="slicerBody" role="listbox" aria-multiselectable="true" aria-label="other_key">
+            <div role="option" aria-setsize="1" aria-posinset="1" data-row-id="stale"
+              aria-selected="true" title="Stale value"></div>
+          </div>
+        </div>
+      </div>
+    `;
+    const input = document.querySelector<HTMLInputElement>("#wrong-popup input.searchInput")!;
+    input.value = "stale";
+    modelSearchProjectionRestore(input);
+    input.addEventListener("input", () => {
+      if (input.value === "") {
+        const listbox = document.querySelector<HTMLElement>("#wrong-popup [role=listbox]")!;
+        listbox.innerHTML = `
+          <div role="option" aria-setsize="2" aria-posinset="1" data-row-id="stale"
+            aria-selected="true" title="Stale value"></div>
+          <div role="option" aria-setsize="2" aria-posinset="2" data-row-id="other"
+            aria-selected="false" title="Other value"></div>`;
+      }
+    });
+
+    await expect(createAdapter(document).readListFilters()).resolves.toEqual([
+      { title: "Очередь", type: "list", selectedLabels: ["Stale value"] }
+    ]);
+  });
+
+  it("keeps a complete no-search domain authoritative", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+        <div role="combobox" aria-label="queue_key" aria-controls="queue-popup"></div>
+      </div></section></main>
+      <div id="queue-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div class="slicerBody" role="listbox" aria-multiselectable="true" aria-label="queue_key">
+            <div role="option" aria-setsize="2" aria-posinset="1" data-row-id="cma"
+              aria-selected="true" title="CMA"></div>
+            <div role="option" aria-setsize="2" aria-posinset="2" data-row-id="other"
+              aria-selected="false" title="Other"></div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    await expect(createAdapter(document).readListFilters()).resolves.toEqual([
+      { title: "Очередь", type: "list", selectedLabels: ["CMA"] }
+    ]);
+  });
+
+  it("does not treat selection-only replacement as unfiltered-domain proof", async () => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+        <div role="combobox" aria-label="queue_key" aria-controls="queue-popup"></div>
+      </div></section></main>
+      <div id="queue-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div class="slicerBody" role="listbox" aria-multiselectable="true" aria-label="queue_key">
+            <div role="option" aria-setsize="2" aria-posinset="1" data-row-id="cma"
+              aria-selected="true" title="CMA"></div>
+            <div role="option" aria-setsize="2" aria-posinset="2" data-row-id="other"
+              aria-selected="true" title="Other"></div>
+          </div>
+        </div>
+      </div>
+    `;
+    document.querySelector<HTMLInputElement>("#queue-popup input.searchInput")!.value = "cma";
+    let replaced = false;
+    const timing = createScheduledTiming(() => {
+      if (replaced) {
+        return;
+      }
+      replaced = true;
+      document.querySelector("#queue-popup")!.innerHTML = `
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div class="slicerBody" role="listbox" aria-multiselectable="true" aria-label="queue_key">
+            <div role="option" aria-setsize="2" aria-posinset="1" data-row-id="replacement-cma"
+              aria-selected="true" title="CMA"></div>
+            <div role="option" aria-setsize="2" aria-posinset="2" data-row-id="replacement-other"
+              aria-selected="false" title="Other"></div>
+          </div>
+        </div>
+      `;
+    });
+
+    await expect(createAdapterWithDefaults(document, { timing }).readListFilters()).resolves.toEqual([]);
+  });
+
+  it.each([
+    ["missing position", 'aria-setsize="1" data-row-id="0:1"'],
+    ["missing stable identity", 'aria-setsize="1" aria-posinset="1"'],
+    ["missing set size", 'aria-posinset="1" data-row-id="0:1"']
+  ] as const)("fails closed for a single selected active-search result with %s", async (_case, metadata) => {
+    document.body.innerHTML = `
+      <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
+        <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+        <div role="combobox" aria-label="queue_key" aria-controls="queue-popup"></div>
+      </div></section></main>
+      <div id="queue-popup" class="slicer-dropdown-popup visual themeableElement focused">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input type="text" class="searchInput" /></div>
+          <div class="slicerBody" role="listbox" aria-multiselectable="true" aria-label="queue_key">
+            <div role="option" ${metadata} aria-selected="true" title="CMA"></div>
+          </div>
+        </div>
+      </div>
+    `;
+    document.querySelector<HTMLInputElement>("#queue-popup input.searchInput")!.value = "cma";
+
+    await expect(createAdapter(document).readListFilters()).resolves.toEqual([]);
   });
 
   it.each([
@@ -2231,7 +4133,7 @@ describe("createPowerBiDomAdapter", () => {
     ]);
   });
 
-  it("keeps labels when a replacement listbox appears with an active search query during the scan", async () => {
+  it("omits labels when a replacement introduces an active query without a domain transition", async () => {
     document.body.innerHTML = `
       <main>
         <section class="visual customPadding visual-slicer">
@@ -2275,13 +4177,11 @@ describe("createPowerBiDomAdapter", () => {
       { once: true }
     );
 
-    await expect(createAdapter(document).readListFilters()).resolves.toEqual([
-      { title: "Task type", type: "list", selectedLabels: ["Story", "Substory"] }
-    ]);
+    await expect(createAdapter(document).readListFilters()).resolves.toEqual([]);
     expect(replaced).toBe(true);
   });
 
-  it("preserves capture discovery for a connected hidden aria-controlled snapshot", async () => {
+  it("reopens a connected hidden aria-controlled snapshot before capturing its current state", async () => {
     document.body.innerHTML = `
       <main><section class="visual customPadding visual-slicer"><div class="slicer-container">
         <h3 class="slicer-header-text" aria-label="Queue" title="Queue">Queue</h3>
@@ -2296,10 +4196,95 @@ describe("createPowerBiDomAdapter", () => {
         </div>
       </div>
     `;
+    let opened = false;
+    document.querySelector<HTMLElement>('[role="combobox"]')!.addEventListener("click", () => {
+      opened = true;
+      document.querySelector<HTMLElement>("#queue-popup")!.style.display = "block";
+      document.querySelector<HTMLElement>('#queue-popup [role="listbox"]')!.innerHTML = `
+        <div role="option" aria-selected="false" title="Saved"></div>
+        <div role="option" aria-selected="true" title="Current"></div>`;
+    });
 
     await expect(createAdapter(document).readListFilters()).resolves.toEqual([
-      { title: "Queue", type: "list", selectedLabels: ["Saved"] }
+      { title: "Queue", type: "list", selectedLabels: ["Current"] }
     ]);
+    expect(opened).toBe(true);
+  });
+
+  it("reopens Team after an earlier Queue capture hides and shrinks its 14-of-24 row snapshot", async () => {
+    document.body.innerHTML = `
+      <main>
+        <section class="visual customPadding visual-slicer"><div class="slicer-container">
+          <h3 class="slicer-header-text" aria-label="Очередь" title="Очередь">Очередь</h3>
+          <div role="combobox" aria-label="queue_key" aria-controls="queue-popup"></div>
+        </div></section>
+        <section class="visual customPadding visual-slicer"><div class="slicer-container">
+          <h3 class="slicer-header-text" aria-label="Команда" title="Команда">Команда</h3>
+          <div role="combobox" aria-label="Команда" aria-controls="team-popup"><div class="slicer-restatement">All</div></div>
+        </div></section>
+      </main>
+      <div id="queue-popup" class="slicer-dropdown-popup" style="display:none">
+        <div class="slicerContainer isMultiSelectEnabled"><div role="listbox" aria-multiselectable="true" aria-label="queue_key">
+        </div></div>
+      </div>
+      <div id="team-popup" class="slicer-dropdown-popup" style="display:block">
+        <div class="slicerContainer isMultiSelectEnabled">
+          <div class="searchHeader show"><input class="searchInput" /></div>
+          <div role="listbox" aria-multiselectable="true" aria-label="Команда"><div class="scroll-content"></div></div>
+          <div class="slicer-dropdown-loader" style="display:none"></div>
+        </div>
+      </div>`;
+    const queuePopup = document.querySelector<HTMLElement>("#queue-popup")!;
+    const teamPopup = document.querySelector<HTMLElement>("#team-popup")!;
+    const teamScroll = teamPopup.querySelector<HTMLElement>(".scroll-content")!;
+    const labels = ["Select all", ...Array.from({ length: 23 }, (_, index) => `Team ${index + 1}`)];
+    const renderTeam = () => {
+      const first = Math.min(10, Math.floor(teamScroll.scrollTop / 14));
+      teamScroll.innerHTML = labels.slice(first, first + 14).map((label, index) => `
+        <div role="option" aria-setsize="24" aria-posinset="${first + index + 1}" data-row-id="0:${first + index + 1}"
+          aria-selected="false" title="${label}"></div>`).join("");
+    };
+    Object.defineProperties(teamScroll, {
+      clientHeight: { configurable: true, value: 179 },
+      scrollHeight: { configurable: true, value: 336 }
+    });
+    renderTeam();
+    let queueOpened = false;
+    let teamReopened = false;
+    let hiddenSnapshotShrank = false;
+    document.querySelector<HTMLElement>('[aria-controls="queue-popup"]')!.addEventListener("click", () => {
+      queueOpened = true;
+      teamPopup.style.display = "none";
+      queuePopup.style.display = "block";
+      queuePopup.querySelector<HTMLElement>('[role="listbox"]')!.innerHTML = `
+        <div role="option" aria-setsize="2" aria-posinset="1" data-row-id="cma" aria-selected="true" title="CMA"></div>
+        <div role="option" aria-setsize="2" aria-posinset="2" data-row-id="other" aria-selected="false" title="Other"></div>`;
+    });
+    document.querySelector<HTMLElement>('[aria-controls="team-popup"]')!.addEventListener("click", () => {
+      teamReopened = true;
+      queuePopup.style.display = "none";
+      teamPopup.style.display = "block";
+      teamScroll.scrollTop = 0;
+      renderTeam();
+    });
+    teamScroll.addEventListener("scroll", () => {
+      if (teamPopup.style.display !== "none") {
+        renderTeam();
+      }
+    });
+    const timing = createScheduledTiming(() => {
+      if (queueOpened && !hiddenSnapshotShrank && !teamReopened) {
+        hiddenSnapshotShrank = true;
+        teamScroll.innerHTML = '<div role="option" aria-setsize="24" aria-posinset="1" data-row-id="0:1" aria-selected="false" title="Select all"></div>';
+      }
+    });
+
+    await expect(createAdapterWithDefaults(document, { timing }).readListFilters()).resolves.toEqual([
+      { title: "Очередь", type: "list", selectedLabels: ["CMA"] },
+      { title: "Команда", type: "list", selectedLabels: [], selectionMode: "none" }
+    ]);
+    expect(hiddenSnapshotShrank).toBe(true);
+    expect(teamReopened).toBe(true);
   });
 
   it("bounds capture resolve and scan to one capture budget", async () => {
@@ -2327,8 +4312,8 @@ describe("createPowerBiDomAdapter", () => {
     await expect(createAdapterWithDefaults(document, { timing }).readListFilters()).resolves.toEqual([
       { title: "Queue", type: "list", selectedLabels: [] }
     ]);
-    expect(now).toBeGreaterThanOrEqual(3000);
-    expect(now).toBeLessThanOrEqual(3025);
+    expect(now).toBeGreaterThanOrEqual(9000);
+    expect(now).toBeLessThanOrEqual(9025);
   });
 
   it("reopens generic multi-select dropdowns when a stale external listbox has no selected options", async () => {
@@ -2480,7 +4465,7 @@ describe("createPowerBiDomAdapter", () => {
         closePopup();
       }
     });
-    const adapter = createAdapter(document, { realTime: true });
+    const adapter = createAdapter(document);
 
     await expect(adapter.readListFilters()).resolves.toEqual([{ title: "Product", type: "list", selectedLabels: [] }]);
     expect(document.querySelector(".slicer-dropdown-popup")).toBeNull();
@@ -2793,7 +4778,7 @@ describe("createPowerBiDomAdapter", () => {
         closePopup();
       }
     });
-    const adapter = createAdapter(document, { realTime: true });
+    const adapter = createAdapter(document);
 
     await expect(adapter.readListFilters()).resolves.toEqual([{ title: "Продукт", type: "list", selectedLabels: [] }]);
     expect(document.querySelector(".slicer-dropdown-popup")).toBeNull();
